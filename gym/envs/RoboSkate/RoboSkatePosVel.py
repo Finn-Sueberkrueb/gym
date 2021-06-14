@@ -121,10 +121,10 @@ def RoboSkate_thread(port=50051, graphics_environment=False):
 # --------------------------------------------------------------------------------
 # ------------------ RoboSkate Environment ---------------------------------------
 # --------------------------------------------------------------------------------
-class RoboSkateEnv(gym.Env):
+class RoboSkatePosVel(gym.Env):
 
     def __init__(self, port=50051, render=False):
-        super(RoboSkateEnv, self).__init__()
+        super(RoboSkatePosVel, self).__init__()
 
         self.Port = port
 
@@ -157,7 +157,7 @@ class RoboSkateEnv(gym.Env):
 
         self.observation_space = spaces.Box(low=-1,
                                             high=1,
-                                            shape=(5,),
+                                            shape=(8,),
                                             dtype=np.float32)
 
     # ------------------------------------------------------------------------------------------------------------------
@@ -190,9 +190,25 @@ class RoboSkateEnv(gym.Env):
 
 
     # ------------------------------------------------------------------------------------------------------------------
+    def setstartposition(self):
+        for i in range(50):
+
+            self.state = get_info(self.stub)
+            joint2 = (55 - self.state.boardCraneJointAngles[1]*max_Joint_pos_2)
+            joint3 = (110 - self.state.boardCraneJointAngles[2]*max_Joint_pos_3)
+            set_info(self.stub, 0, joint2/20, joint3/10)
+            run_game(self.stub, 0.2)
+
+        set_info(self.stub, 0,0,0)
+
+
+
     def reset(self):
 
         initialize(self.stub, "0,10,10")
+
+        self.setstartposition()
+
         self.start = time.time()
         self.stepcount = 0
 
@@ -206,45 +222,17 @@ class RoboSkateEnv(gym.Env):
                                                                self.state.boardRotation[7],
                                                                self.state.boardRotation[9])
 
-        self.reward = self.get_reward(self.state, self.directionError, 0)
 
         return np.array([self.state.boardCraneJointAngles[0],
                          self.state.boardCraneJointAngles[1],
                          self.state.boardCraneJointAngles[2],
+                         self.state.boardCraneJointAngles[3],
+                         self.state.boardCraneJointAngles[4],
+                         self.state.boardCraneJointAngles[5],
                          self.state.boardRotation[8],
                          self.directionError]).astype(np.float32)
 
-    # Reward Funktion
-    def get_reward(self, state, directionError, aktionjoint1):
-        # variables used for reward
-        basehight = 0.3
-        arm1lengt = 1.1
-        arm2lengt = 0.9
 
-        checkpoint1_X = 107.69
-        checkpoint1_Y = -35.21
-
-        reward = 0
-
-        # Reward the correct oriantation to trevel
-        reward -= abs(directionError)*10
-
-        # punisch actions on joint1
-        reward -= abs(aktionjoint1) * 100
-
-        # calculate the hight off the ball over the board
-        ballhight = (math.cos(((state.boardCraneJointAngles[2] * max_Joint_pos_3 + state.boardCraneJointAngles[1] * max_Joint_pos_2) / 180.0) * math.pi) * arm2lengt + math.cos((state.boardCraneJointAngles[1] * max_Joint_pos_2 / 180) * math.pi) * arm1lengt)
-
-        # use the hight off the ball and calculate reward with curve that uses a flat ground and is slightly shiftes ubwards
-        reward -= ((ballhight+basehight) ** 4) * 10
-
-        # reward the speed
-        # reward += state.boardPosition[3] * max_board_vel_XY * 10  # X Velocity
-
-        # reward the position towards the checkpoint
-        reward += checkpoint1_X - state.boardPosition[0]*max_board_pos_XY  # X Deviation from checkpoint
-        reward += checkpoint1_Y - state.boardPosition[2]*max_board_pos_XY  # Y Deviation from checkpoint
-        return reward
 
     def step(self, action):
         # set the actions
@@ -254,6 +242,9 @@ class RoboSkateEnv(gym.Env):
 
         # Run RoboSkate Game for time 0.2s
         run_game(self.stub, 0.2)
+
+        self.oldstate = self.state
+        self.oldirectionError = self.directionError
 
         # get the current observations
         self.state = get_info(self.stub)
@@ -265,8 +256,13 @@ class RoboSkateEnv(gym.Env):
                                                                self.state.boardRotation[7],
                                                                self.state.boardRotation[9])
 
-        # calculate current Reward
-        self.reward = self.get_reward(self.state, self.directionError, action[0])
+
+        directionCorrection = abs(self.oldirectionError) - abs(self.directionError)
+        forward_reward = (self.state.boardPosition[0] - self.oldstate.boardPosition[0]) * max_board_pos_XY + (self.state.boardPosition[2] - self.oldstate.boardPosition[2]) * max_board_pos_XY
+        ctrl_cost = abs(action[0]) + abs(action[1]) + abs(action[2])
+        survive_reward = 1
+
+        self.reward = forward_reward*50 - ctrl_cost*1 + directionCorrection*20 + survive_reward
 
 
         # Termination conditions
@@ -281,11 +277,12 @@ class RoboSkateEnv(gym.Env):
         elif abs(self.state.boardRotation[11]) < 0.30:
             # Stop if board is tipped
             #print("board is tipped")
-            self.reward -= 2000
+            self.reward -= 200
             done = True
         elif abs(self.state.boardCraneJointAngles[3] * max_Joint_vel) > 150:
             # Stop turning the first joint
             #print("Helicopter")
+            self.reward -= 200
             done = True
         else:
             done = False
@@ -304,8 +301,11 @@ class RoboSkateEnv(gym.Env):
         return np.array([self.state.boardCraneJointAngles[0],
                          self.state.boardCraneJointAngles[1],
                          self.state.boardCraneJointAngles[2],
+                         self.state.boardCraneJointAngles[3],
+                         self.state.boardCraneJointAngles[4],
+                         self.state.boardCraneJointAngles[5],
                          self.state.boardRotation[8],
-                         self.directionError]).astype(np.float32), self.reward/1000.0, done, info
+                         self.directionError]).astype(np.float32), self.reward, done, info
 
 
     def render(self, mode='human'):

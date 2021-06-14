@@ -9,6 +9,13 @@ register(
 )
 
 register(
+    id='RoboSkatePosVel-v0',
+    entry_point='gym.envs.RoboSkate:RoboSkatePosVel',
+    max_episode_steps=1000,
+)
+
+
+register(
     id='Copy-v0',
     entry_point='gym.envs.algorithmic:CopyEnv',
     max_episode_steps=200,
