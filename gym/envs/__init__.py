@@ -2,6 +2,11 @@ from gym.envs.registration import registry, register, make, spec
 
 # Algorithmic
 # ----------------------------------------
+register(
+    id='RoboSkateEnv-v0',
+    entry_point='gym.envs.RoboSkate:RoboSkateEnv',
+    max_episode_steps=1000,
+)
 
 register(
     id='Copy-v0',
