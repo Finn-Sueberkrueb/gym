@@ -14,6 +14,12 @@ register(
     max_episode_steps=1000,
 )
 
+register(
+    id='RoboSkatePosVelImage-v0',
+    entry_point='gym.envs.RoboSkate:RoboSkatePosVelImage',
+    max_episode_steps=1000,
+)
+
 
 register(
     id='Copy-v0',
