@@ -123,18 +123,19 @@ def RoboSkate_thread(port=50051, graphics_environment=False):
 # --------------------------------------------------------------------------------
 class RoboSkatePosVel(gym.Env):
 
-    def __init__(self, port=50051, render=False):
+    def __init__(self,max_episode_length=1000, port=50051, render=False, AutostartRoboSkate=True):
         super(RoboSkatePosVel, self).__init__()
 
         self.Port = port
 
-        self.max_episode_length = 1000
+        self.max_episode_length = max_episode_length
 
-        threading.Thread(target=RoboSkate_thread, args=(self.Port,render)).start()
-
-        time.sleep(15)
-
-        print("RoboSkate started with port: " + str(self.Port))
+        if AutostartRoboSkate:
+            threading.Thread(target=RoboSkate_thread, args=(self.Port,render)).start()
+            time.sleep(15)
+            print("RoboSkate started with port: " + str(self.Port))
+        else:
+            print("RoboSkate needs to be started manual.")
 
         # gRPC channel
         address = 'localhost:' + str(self.Port)
@@ -168,9 +169,14 @@ class RoboSkatePosVel(gym.Env):
         if x_pos <= 72.5:
             # first part drive straight
             correct_orientation = 0
-        elif x_pos > 72.5:
+            correct_yPosition = 0
+        elif (x_pos > 72.5) and (x_pos < 72.5+33):
             # Calculate the orientation in the curve by the tangent of a circle
-            correct_orientation = -math.sin((x_pos - 72.5) * (math.pi / 2) / 35.19) * 90
+            correct_orientation = -math.sin((x_pos - 72.5) * (math.pi / 2) / 35.21) * 90
+            correct_yPosition = -35.21*(1-math.sin(math.acos((x_pos-72.5)/35.21)))
+        else:
+            correct_orientation = -120
+            correct_yPosition = y_pos
 
         # Normalization
         x_ori = x_orientation / abs(x_orientation + y_oriantation)
@@ -184,14 +190,16 @@ class RoboSkatePosVel(gym.Env):
             else:
                 current_orientation = -180 - math.atan(y_ori / abs(x_ori)) * 90
 
-        direction_error = current_orientation - correct_orientation
+        direction_error = (current_orientation - correct_orientation)
+        direction_error -= np.clip((correct_yPosition-y_pos)*20, -15, 15)
 
         return -direction_error, current_orientation, correct_orientation
 
 
     # ------------------------------------------------------------------------------------------------------------------
+    # Set the Robot Arm to a low starting possition to get an easyer start
     def setstartposition(self):
-        for i in range(50):
+        for i in range(5):
 
             self.state = get_info(self.stub)
             joint2 = (55 - self.state.boardCraneJointAngles[1]*max_Joint_pos_2)
@@ -258,11 +266,15 @@ class RoboSkatePosVel(gym.Env):
 
 
         directionCorrection = abs(self.oldirectionError) - abs(self.directionError)
-        forward_reward = (self.state.boardPosition[0] - self.oldstate.boardPosition[0]) * max_board_pos_XY + (self.state.boardPosition[2] - self.oldstate.boardPosition[2]) * max_board_pos_XY
-        ctrl_cost = abs(action[0]) + abs(action[1]) + abs(action[2])
-        survive_reward = 1
+        #forward_reward = (self.state.boardPosition[0] - self.oldstate.boardPosition[0]) * max_board_pos_XY + (self.oldstate.boardPosition[2] - self.state.boardPosition[2]) * max_board_pos_XY
+        forward_reward = (self.state.boardPosition[0] - self.oldstate.boardPosition[0]) * max_board_pos_XY
+        #ctrl_cost = abs(action[0]) + abs(action[1]) + abs(action[2])
+        #survive_reward = 1
 
-        self.reward = forward_reward*50 - ctrl_cost*1 + directionCorrection*20 + survive_reward
+        #self.reward = forward_reward*50 - ctrl_cost*1 + directionCorrection*20 + survive_reward
+        self.reward = forward_reward * 50 + directionCorrection * 10
+
+
 
 
         # Termination conditions
