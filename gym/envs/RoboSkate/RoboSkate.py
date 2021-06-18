@@ -110,7 +110,6 @@ def shutdown(stub):
 
 
 
-
 # --------------------------------------------------------------------------------
 # ------------------ RoboSkate Game ----------------------------------------------
 # --------------------------------------------------------------------------------
@@ -118,6 +117,7 @@ def RoboSkate_thread(port, graphics_environment):
     if graphics_environment:
         # choose Platform and run with graphics
         if platform == "darwin":
+            print("RoboSkate XXXX port: " + str(port))
             var = os.system("../games/RoboSkate.app/Contents/MacOS/RoboSkate -p " + str(port))
         elif platform == "linux" or platform == "linux2":
             var = os.system("../games/RoboSkate/roboskate.x86_64 -p " + str(port))
@@ -180,8 +180,8 @@ class RoboSkate(gym.Env):
 
         if not(self.is_port_open('localhost', self.Port)):
             if AutostartRoboSkate:
-                threading.Thread(target=RoboSkate_thread, args=(self.Port, not(headlessMode))).start()
-                time.sleep(15)
+                threading.Thread(name="RoboSkate"+str(self.Port), target=RoboSkate_thread, args=(self.Port, not(headlessMode))).start()
+                time.sleep(10)
                 print("RoboSkate started with port: " + str(self.Port))
             else:
                 print("RoboSkate needs to be started manual bevore.")
