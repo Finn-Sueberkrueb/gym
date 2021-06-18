@@ -3,23 +3,10 @@ from gym.envs.registration import registry, register, make, spec
 # Algorithmic
 # ----------------------------------------
 register(
-    id='RoboSkateEnv-v0',
-    entry_point='gym.envs.RoboSkate:RoboSkateEnv',
+    id='RoboSkate-v0',
+    entry_point='gym.envs.RoboSkate:RoboSkate',
     max_episode_steps=1000,
 )
-
-register(
-    id='RoboSkatePosVel-v0',
-    entry_point='gym.envs.RoboSkate:RoboSkatePosVel',
-    max_episode_steps=1000,
-)
-
-register(
-    id='RoboSkatePosVelImage-v0',
-    entry_point='gym.envs.RoboSkate:RoboSkatePosVelImage',
-    max_episode_steps=1000,
-)
-
 
 register(
     id='Copy-v0',

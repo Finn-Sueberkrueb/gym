@@ -16,6 +16,10 @@ import grpc
 import time
 from gym.envs.RoboSkate.grpcClient import service_pb2_grpc
 from gym.envs.RoboSkate.grpcClient.service_pb2 import InitializeRequest, NoParams, RunGameRequest, SetInfoRequest
+import io
+from PIL import Image
+import socket
+import imageio
 
 # Value Range for observations abs(-Min) = Max
 max_Joint_force = 300.0
@@ -71,13 +75,24 @@ def get_info(stub):
         reply.boardPosition[5] /= max_board_vel_XY
 
         reply.boardRotation[7] /= 1  # If the board is pointing straight forward, this entry is 1.
+        reply.boardRotation[8] /= 1
         reply.boardRotation[9] /= 1  # If the board points to the left, this entry is 1.
+        reply.boardRotation[10] /= 1
         reply.boardRotation[11] /= 1  # In the Boll is flat on the ground this is 1 (yaw dose not change this value)
+        reply.boardRotation[12] /= 1
 
         return reply
     else:
         print("GetInfo gRPC failure")
 
+def get_camera(stub, i):
+    reply = stub.get_camera(NoParams())
+
+    image = reply.imageData
+    stream = io.BytesIO(image)
+    img = Image.open(stream)
+
+    return np.asarray(img)
 
 def run_game(stub, simTime):
     # Run the game for one time step (duration of simTime)
@@ -99,7 +114,7 @@ def shutdown(stub):
 # --------------------------------------------------------------------------------
 # ------------------ RoboSkate Game ----------------------------------------------
 # --------------------------------------------------------------------------------
-def RoboSkate_thread(port=50051, graphics_environment=False):
+def RoboSkate_thread(port, graphics_environment):
     if graphics_environment:
         # choose Platform and run with graphics
         if platform == "darwin":
@@ -121,21 +136,62 @@ def RoboSkate_thread(port=50051, graphics_environment=False):
 # --------------------------------------------------------------------------------
 # ------------------ RoboSkate Environment ---------------------------------------
 # --------------------------------------------------------------------------------
-class RoboSkatePosVel(gym.Env):
+class RoboSkate(gym.Env):
 
-    def __init__(self,max_episode_length=1000, port=50051, render=False, AutostartRoboSkate=True):
-        super(RoboSkatePosVel, self).__init__()
+    def is_port_open(self, host, port):
+        """
+        determine whether `host` has the `port` open
+        """
+        # creates a new socket
+        s = socket.socket()
+        try:
+            # tries to connect to host using that port
+            s.connect((host, port))
+            # make timeout if you want it a little faster ( less accuracy )
+            # s.settimeout(0.2)
+        except:
+            # cannot connect, port is closed
+            # return false
+            return False
+        else:
+            # the connection was established, port is open!
+            return True
 
-        self.Port = port
+    def __init__(self,
+                 max_episode_length=1000,
+                 port=50051,
+                 rank=-1,
+                 headlessMode=True,
+                 AutostartRoboSkate=True,
+                 startLevel=0,
+                 cameraWidth=80,
+                 cameraHeight=80):
+
+        super(RoboSkate, self).__init__()
+
+
+        print("RoboSkate Env start with rank: " + str(rank))
+        self.startLevel = startLevel
+        self.cameraWidth = cameraWidth
+        self.cameraHeight = cameraHeight
+        self.headlessMode = headlessMode
+        self.Port = port + rank
+
+
+        if not(self.is_port_open('localhost', self.Port)):
+            if AutostartRoboSkate:
+                threading.Thread(target=RoboSkate_thread, args=(self.Port, not(headlessMode))).start()
+                time.sleep(15)
+                print("RoboSkate started with port: " + str(self.Port))
+            else:
+                print("RoboSkate needs to be started manual bevore.")
+        else:
+            print("RoboSkate with port " + str(self.Port) + " already running or port is used from different app.")
+
 
         self.max_episode_length = max_episode_length
 
-        if AutostartRoboSkate:
-            threading.Thread(target=RoboSkate_thread, args=(self.Port,render)).start()
-            time.sleep(15)
-            print("RoboSkate started with port: " + str(self.Port))
-        else:
-            print("RoboSkate needs to be started manual.")
+
 
         # gRPC channel
         address = 'localhost:' + str(self.Port)
@@ -158,26 +214,29 @@ class RoboSkatePosVel(gym.Env):
 
         self.observation_space = spaces.Box(low=-1,
                                             high=1,
-                                            shape=(8,),
+                                            shape=(15,),
                                             dtype=np.float32)
 
     # ------------------------------------------------------------------------------------------------------------------
-    # Calculation of the direction error This function shall be replaced later by image data
-    def calculateDirectionError(self, x_pos, y_pos, x_orientation, y_oriantation):
+    # Calculation of Steering Angle in Level 1 splitted in straight part and kurv.
+    # This function shall be replaced later by image data
+    # everything in degree and meters
+    def calculateSteeringAngleLevel1(self, x_pos, y_pos, x_orientation, y_oriantation):
 
-        # everything in degree
         if x_pos <= 72.5:
             # first part drive straight
             correct_orientation = 0
             correct_yPosition = 0
-        elif (x_pos > 72.5) and (x_pos < 72.5+33):
+            position_error = y_pos
+
+        elif x_pos > 72.5:
             # Calculate the orientation in the curve by the tangent of a circle
             correct_orientation = -math.sin((x_pos - 72.5) * (math.pi / 2) / 35.21) * 90
-            correct_yPosition = -35.21*(1-math.sin(math.acos((x_pos-72.5)/35.21)))
-        else:
-            correct_orientation = -120
-            correct_yPosition = y_pos
+            correct_radius = 35.21
+            current_radius = math.sqrt( ((x_pos-72.5)**2) + ((y_pos + 35.21)**2))
+            position_error = current_radius - correct_radius
 
+        # Calculate rotation error
         # Normalization
         x_ori = x_orientation / abs(x_orientation + y_oriantation)
         y_ori = y_oriantation / abs(x_orientation + y_oriantation)
@@ -190,10 +249,11 @@ class RoboSkatePosVel(gym.Env):
             else:
                 current_orientation = -180 - math.atan(y_ori / abs(x_ori)) * 90
 
-        direction_error = (current_orientation - correct_orientation)
-        direction_error -= np.clip((correct_yPosition-y_pos)*20, -15, 15)
+        rotation_error = (current_orientation - correct_orientation)
 
-        return -direction_error, current_orientation, correct_orientation
+        direction_error = (-1) * np.clip(rotation_error + position_error * 5, -25, 25)
+
+        return direction_error
 
 
     # ------------------------------------------------------------------------------------------------------------------
@@ -213,8 +273,11 @@ class RoboSkatePosVel(gym.Env):
 
     def reset(self):
 
-        initialize(self.stub, "0,10,10")
 
+
+        initialize(self.stub, str(self.startLevel) + "," + str(self.cameraWidth) + "," + str(self.cameraHeight))
+
+        # Set a predefined startposition to make learning easyer
         self.setstartposition()
 
         self.start = time.time()
@@ -223,9 +286,7 @@ class RoboSkatePosVel(gym.Env):
         # get the current state
         self.state = get_info(self.stub)
 
-        self.directionError, \
-        self.currentOrientation, \
-        self.correctOrientation = self.calculateDirectionError(self.state.boardPosition[0] * max_board_pos_XY,
+        self.directionError = self.calculateSteeringAngleLevel1(self.state.boardPosition[0] * max_board_pos_XY,
                                                                self.state.boardPosition[2] * max_board_pos_XY,
                                                                self.state.boardRotation[7],
                                                                self.state.boardRotation[9])
@@ -237,7 +298,14 @@ class RoboSkatePosVel(gym.Env):
                          self.state.boardCraneJointAngles[3],
                          self.state.boardCraneJointAngles[4],
                          self.state.boardCraneJointAngles[5],
+                         self.state.boardPosition[3],
+                         self.state.boardPosition[5],
+                         self.state.boardRotation[7],
                          self.state.boardRotation[8],
+                         self.state.boardRotation[9],
+                         self.state.boardRotation[10],
+                         self.state.boardRotation[11],
+                         self.state.boardRotation[12],
                          self.directionError]).astype(np.float32)
 
 
@@ -257,21 +325,25 @@ class RoboSkatePosVel(gym.Env):
         # get the current observations
         self.state = get_info(self.stub)
 
-        self.directionError, \
-        self.currentOrientation, \
-        self.correctOrientation = self.calculateDirectionError(self.state.boardPosition[0] * max_board_pos_XY,
-                                                               self.state.boardPosition[2] * max_board_pos_XY,
-                                                               self.state.boardRotation[7],
-                                                               self.state.boardRotation[9])
+        if not(self.headlessMode):
+            # render image in Unity
+            image = get_camera(self.stub, self.stepcount)
+            imageio.imwrite("./RoboSkate.png", image)
+        else:
+            image = 0
+
+        self.directionError = self.calculateSteeringAngleLevel1(self.state.boardPosition[0] * max_board_pos_XY,
+                                                                self.state.boardPosition[2] * max_board_pos_XY,
+                                                                self.state.boardRotation[7],
+                                                                self.state.boardRotation[9])
 
 
         directionCorrection = abs(self.oldirectionError) - abs(self.directionError)
-        #forward_reward = (self.state.boardPosition[0] - self.oldstate.boardPosition[0]) * max_board_pos_XY + (self.oldstate.boardPosition[2] - self.state.boardPosition[2]) * max_board_pos_XY
-        forward_reward = (self.state.boardPosition[0] - self.oldstate.boardPosition[0]) * max_board_pos_XY
-        #ctrl_cost = abs(action[0]) + abs(action[1]) + abs(action[2])
-        #survive_reward = 1
+        if (self.state.boardPosition[0]*max_board_pos_XY) < 72.5:
+            forward_reward = (self.state.boardPosition[0] - self.oldstate.boardPosition[0]) * max_board_pos_XY
+        else:
+            forward_reward = (self.state.boardPosition[0] - self.oldstate.boardPosition[0]) * max_board_pos_XY + (self.oldstate.boardPosition[2] - self.state.boardPosition[2]) * max_board_pos_XY
 
-        #self.reward = forward_reward*50 - ctrl_cost*1 + directionCorrection*20 + survive_reward
         self.reward = forward_reward * 50 + directionCorrection * 10
 
 
@@ -282,11 +354,11 @@ class RoboSkatePosVel(gym.Env):
             # Stop if max episode is reached
             #print("time is up")
             done = True
-        elif (self.state.boardPosition[0]* max_board_pos_XY > 105) and (self.state.boardPosition[2]* max_board_pos_XY < 33):
+        elif self.state.boardPosition[2]* max_board_pos_XY <= -35:
             # Stop if checkpoint is reached
             #print("checkpoint1 reached")
             done = True
-        elif abs(self.state.boardRotation[11]) < 0.30:
+        elif abs(self.state.boardRotation[11]) < 0.40:
             # Stop if board is tipped
             #print("board is tipped")
             self.reward -= 200
@@ -305,8 +377,7 @@ class RoboSkatePosVel(gym.Env):
                 "xPos": (self.state.boardPosition[0] * max_board_pos_XY),
                 "yPos": (self.state.boardPosition[2] * max_board_pos_XY),
                 "direction error": self.directionError,
-                "current Orientation": self.currentOrientation,
-                "correct Orientation": self.correctOrientation}
+                "image": image}
 
         self.stepcount += 1
 
@@ -316,12 +387,20 @@ class RoboSkatePosVel(gym.Env):
                          self.state.boardCraneJointAngles[3],
                          self.state.boardCraneJointAngles[4],
                          self.state.boardCraneJointAngles[5],
+                         self.state.boardPosition[3],
+                         self.state.boardPosition[5],
+                         self.state.boardRotation[7],
                          self.state.boardRotation[8],
+                         self.state.boardRotation[9],
+                         self.state.boardRotation[10],
+                         self.state.boardRotation[11],
+                         self.state.boardRotation[12],
                          self.directionError]).astype(np.float32), self.reward, done, info
 
 
     def render(self, mode='human'):
-        print('render is not in use!')
+        # render is not in use since Unity game.
+        pass
 
     def close(self):
         print('close gRPC client' + str(self.Port))
