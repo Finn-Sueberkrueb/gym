@@ -117,7 +117,8 @@ def RoboSkate_thread(port, graphics_environment):
     if graphics_environment:
         # choose Platform and run with graphics
         if platform == "darwin":
-            print("RoboSkate XXXX port: " + str(port))
+            #print("RoboSkate XXXX port: " + str(port))
+            # TODO: RoboSkate dose not start when launching multible environomenst.
             var = os.system("../games/RoboSkate.app/Contents/MacOS/RoboSkate -p " + str(port))
         elif platform == "linux" or platform == "linux2":
             var = os.system("../games/RoboSkate/roboskate.x86_64 -p " + str(port))
@@ -212,14 +213,15 @@ class RoboSkateGPU(gym.Env):
                                        shape=(3,),
                                        dtype=np.float32)
 
-        self.observation_space = spaces.Dict({"numeric": spaces.Box(low=-1,
+        self.observation_space = spaces.Dict({"image": spaces.Box(low=0,
+                                                                  high=255,
+                                                                  shape=(3, cameraWidth, cameraHeight),
+                                                                  dtype=np.uint8),
+                                              "numeric": spaces.Box(low=-1,
                                                                     high=1,
                                                                     shape=(14,),
-                                                                    dtype=np.float32),
-                                              "image": spaces.Box(low=0,
-                                                                  high=255,
-                                                                  shape=(cameraWidth, cameraHeight, 3),
-                                                                  dtype=np.uint8)})
+                                                                    dtype=np.float32)
+                                              })
 
 
 
@@ -294,18 +296,35 @@ class RoboSkateGPU(gym.Env):
 
         if not(self.headlessMode):
             # render image in Unity
-            image = get_camera(self.stub, self.stepcount)
+            image = get_camera(self.stub, self.stepcount).transpose([2, 0, 1])
+            #imageio.imwrite("./RoboSkate.png", image[0])
         else:
             image = 0
-
-        print(image)
 
         self.directionError = self.calculateSteeringAngleLevel1(self.state.boardPosition[0] * max_board_pos_XY,
                                                                self.state.boardPosition[2] * max_board_pos_XY,
                                                                self.state.boardRotation[7],
                                                                self.state.boardRotation[9])
 
+
+
         # Train with image data
+        return {"image": image,
+                "numeric": np.array([self.state.boardCraneJointAngles[0],
+                                     self.state.boardCraneJointAngles[1],
+                                     self.state.boardCraneJointAngles[2],
+                                     self.state.boardCraneJointAngles[3],
+                                     self.state.boardCraneJointAngles[4],
+                                     self.state.boardCraneJointAngles[5],
+                                     self.state.boardPosition[3],
+                                     self.state.boardPosition[5],
+                                     self.state.boardRotation[7],
+                                     self.state.boardRotation[8],
+                                     self.state.boardRotation[9],
+                                     self.state.boardRotation[10],
+                                     self.state.boardRotation[11],
+                                     self.state.boardRotation[12]]).astype(np.float32)}
+        '''
         return np.array([self.state.boardCraneJointAngles[0],
                          self.state.boardCraneJointAngles[1],
                          self.state.boardCraneJointAngles[2],
@@ -321,7 +340,7 @@ class RoboSkateGPU(gym.Env):
                          self.state.boardRotation[11],
                          self.state.boardRotation[12],
                          image]).astype(np.float32)
-
+        '''
 
 
 
@@ -342,7 +361,8 @@ class RoboSkateGPU(gym.Env):
 
         if not(self.headlessMode):
             # render image in Unity
-            image = get_camera(self.stub, self.stepcount)
+            image = get_camera(self.stub, self.stepcount).transpose([2, 0, 1])
+            #imageio.imwrite("./RoboSkate.png", image[0])
         else:
             image = 0
 
@@ -394,21 +414,21 @@ class RoboSkateGPU(gym.Env):
         self.stepcount += 1
 
         # Train with image data
-        return np.array([self.state.boardCraneJointAngles[0],
-                         self.state.boardCraneJointAngles[1],
-                         self.state.boardCraneJointAngles[2],
-                         self.state.boardCraneJointAngles[3],
-                         self.state.boardCraneJointAngles[4],
-                         self.state.boardCraneJointAngles[5],
-                         self.state.boardPosition[3],
-                         self.state.boardPosition[5],
-                         self.state.boardRotation[7],
-                         self.state.boardRotation[8],
-                         self.state.boardRotation[9],
-                         self.state.boardRotation[10],
-                         self.state.boardRotation[11],
-                         self.state.boardRotation[12],
-                         image]).astype(np.float32), self.reward, done, info
+        return {"image": image,
+                "numeric": np.array([self.state.boardCraneJointAngles[0],
+                                     self.state.boardCraneJointAngles[1],
+                                     self.state.boardCraneJointAngles[2],
+                                     self.state.boardCraneJointAngles[3],
+                                     self.state.boardCraneJointAngles[4],
+                                     self.state.boardCraneJointAngles[5],
+                                     self.state.boardPosition[3],
+                                     self.state.boardPosition[5],
+                                     self.state.boardRotation[7],
+                                     self.state.boardRotation[8],
+                                     self.state.boardRotation[9],
+                                     self.state.boardRotation[10],
+                                     self.state.boardRotation[11],
+                                     self.state.boardRotation[12]]).astype(np.float32)}, self.reward, done, info
 
     def render(self, mode='human'):
         # render is not in use since Unity game.
