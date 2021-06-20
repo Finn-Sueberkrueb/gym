@@ -44,6 +44,21 @@ def initialize(stub, string):
     if reply.success != bytes('0', encoding='utf8'):
         print("Initialize failure")
 
+# This function should tell if the connection to roboskate is possible
+def isRunning(stub):
+    try:
+        reply = stub.initialize(InitializeRequest(json="0,10,10"))
+    except:
+        # No grpc channel yet.
+        return False
+    else:
+        if reply.success != bytes('0', encoding='utf8'):
+            # Connection possible but negativ reply
+            print("Something went wrong with RoboSkate.")
+            return False
+        else:
+            # Connection possible and positiv awnser
+            return True
 
 
 def set_info(stub, joint1, joint2, joint3):
@@ -113,26 +128,27 @@ def shutdown(stub):
 # --------------------------------------------------------------------------------
 # ------------------ RoboSkate Game ----------------------------------------------
 # --------------------------------------------------------------------------------
-def RoboSkate_thread(port, graphics_environment):
+
+def startRoboSkate(port, graphics_environment):
     if graphics_environment:
         # choose Platform and run with graphics
         if platform == "darwin":
-            #print("RoboSkate XXXX port: " + str(port))
-            # TODO: RoboSkate dose not start when launching multible environomenst.
-            var = os.system("../games/RoboSkate.app/Contents/MacOS/RoboSkate -p " + str(port))
+            var = os.system("nohup ../games/RoboSkate.app/Contents/MacOS/RoboSkate -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
         elif platform == "linux" or platform == "linux2":
-            var = os.system("../games/RoboSkate/roboskate.x86_64 -p " + str(port))
+            var = os.system("nohup ../games/RoboSkate/roboskate.x86_64 -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
         elif platform == "win32":
-            var = os.system("../games/RoboSkate/RoboSkate.exe -p " + str(port))
+            print("Running RoboSkate on windows in the background has not been tested yet!")
+            var = os.system("nohup ../games/RoboSkate/RoboSkate.exe -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
 
     else:
         # choose Platform and run in batchmode
         if platform == "darwin":
-            var = os.system("../games/RoboSkate.app/Contents/MacOS/RoboSkate -nographics -batchmode -p " + str(port))
+            var = os.system("nohup ../games/RoboSkate.app/Contents/MacOS/RoboSkate -nographics -batchmode -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
         elif platform == "linux" or platform == "linux2":
-            var = os.system("../games/RoboSkate/roboskate.x86_64 -nographics -batchmode  -p " + str(port))
+            var = os.system("nohup ../games/RoboSkate/roboskate.x86_64 -nographics -batchmode  -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
         elif platform == "win32":
-            var = os.system("../games/RoboSkate/RoboSkate.exe -nographics -batchmode  -p " + str(port))
+            print("Running RoboSkate on windows in the background has not been tested yet!")
+            var = os.system("nohup ../games/RoboSkate/RoboSkate.exe -nographics -batchmode  -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
 
 # --------------------------------------------------------------------------------
 # ------------------ RoboSkate Environment ---------------------------------------
@@ -140,19 +156,14 @@ def RoboSkate_thread(port, graphics_environment):
 class RoboSkateGPU(gym.Env):
 
     def is_port_open(self, host, port):
-        """
-        determine whether `host` has the `port` open
-        """
+        # determine whether `host` has the `port` open
         # creates a new socket
         s = socket.socket()
         try:
             # tries to connect to host using that port
             s.connect((host, port))
-            # make timeout if you want it a little faster ( less accuracy )
-            # s.settimeout(0.2)
         except:
             # cannot connect, port is closed
-            # return false
             return False
         else:
             # the connection was established, port is open!
@@ -160,7 +171,7 @@ class RoboSkateGPU(gym.Env):
 
     def __init__(self,
                  max_episode_length=1000,
-                 port=50051,
+                 startport=50051,
                  rank=-1,
                  headlessMode=False,
                  AutostartRoboSkate=True,
@@ -176,13 +187,24 @@ class RoboSkateGPU(gym.Env):
         self.cameraWidth = cameraWidth
         self.cameraHeight = cameraHeight
         self.headlessMode = headlessMode
-        self.Port = port + rank
+        self.Port = startport + rank
+        self.max_episode_length = max_episode_length
 
 
+        # gRPC channel
+        address = 'localhost:' + str(self.Port)
+        channel = grpc.insecure_channel(address)
+        self.stub = service_pb2_grpc.CommunicationServiceStub(channel)
+
+        # Check if the port ist alreay open
         if not(self.is_port_open('localhost', self.Port)):
             if AutostartRoboSkate:
-                threading.Thread(name="RoboSkate"+str(self.Port), target=RoboSkate_thread, args=(self.Port, not(headlessMode))).start()
-                time.sleep(10)
+                startRoboSkate(self.Port, not(headlessMode))
+
+                print("Wait until RoboSkate is started with port: " + str(self.Port))
+                while(not isRunning(self.stub)):
+                    time.sleep(2)
+
                 print("RoboSkate started with port: " + str(self.Port))
             else:
                 print("RoboSkate needs to be started manual before.")
@@ -190,15 +212,6 @@ class RoboSkateGPU(gym.Env):
             print("RoboSkate with port " + str(self.Port) + " already running or port is used from different app.")
 
 
-        self.max_episode_length = max_episode_length
-
-
-
-        # gRPC channel
-        address = 'localhost:' + str(self.Port)
-
-        channel = grpc.insecure_channel(address)
-        self.stub = service_pb2_grpc.CommunicationServiceStub(channel)
 
         # state from the game: position, velocity, angle
         self.state = 0
@@ -237,12 +250,16 @@ class RoboSkateGPU(gym.Env):
             correct_yPosition = 0
             position_error = y_pos
 
-        elif x_pos > 72.5:
+        elif (x_pos > 72.5) and (y_pos > -35.21):
             # Calculate the orientation in the curve by the tangent of a circle
             correct_orientation = -math.sin((x_pos - 72.5) * (math.pi / 2) / 35.21) * 90
             correct_radius = 35.21
             current_radius = math.sqrt( ((x_pos-72.5)**2) + ((y_pos + 35.21)**2))
             position_error = current_radius - correct_radius
+        else:
+            correct_orientation = -90
+            position_error = x_pos - 72.5
+
 
         # Calculate rotation error
         # Normalization
@@ -324,23 +341,7 @@ class RoboSkateGPU(gym.Env):
                                      self.state.boardRotation[10],
                                      self.state.boardRotation[11],
                                      self.state.boardRotation[12]]).astype(np.float32)}
-        '''
-        return np.array([self.state.boardCraneJointAngles[0],
-                         self.state.boardCraneJointAngles[1],
-                         self.state.boardCraneJointAngles[2],
-                         self.state.boardCraneJointAngles[3],
-                         self.state.boardCraneJointAngles[4],
-                         self.state.boardCraneJointAngles[5],
-                         self.state.boardPosition[3],
-                         self.state.boardPosition[5],
-                         self.state.boardRotation[7],
-                         self.state.boardRotation[8],
-                         self.state.boardRotation[9],
-                         self.state.boardRotation[10],
-                         self.state.boardRotation[11],
-                         self.state.boardRotation[12],
-                         image]).astype(np.float32)
-        '''
+
 
 
 
@@ -362,7 +363,6 @@ class RoboSkateGPU(gym.Env):
         if not(self.headlessMode):
             # render image in Unity
             image = get_camera(self.stub, self.stepcount).transpose([2, 0, 1])
-            #imageio.imwrite("./RoboSkate.png", image[0])
         else:
             image = 0
 
@@ -388,7 +388,12 @@ class RoboSkateGPU(gym.Env):
             # Stop if max episode is reached
             #print("time is up")
             done = True
-        elif self.state.boardPosition[2]* max_board_pos_XY <= -35:
+        elif self.state.boardPosition[2]* max_board_pos_XY <= -45:
+            # Stop if checkpoint is reached
+            #print("checkpoint1 reached")
+            self.reward += 200
+            done = False
+        elif self.state.boardPosition[1]* max_board_pos_Z <= -2:
             # Stop if checkpoint is reached
             #print("checkpoint1 reached")
             done = True
@@ -428,7 +433,7 @@ class RoboSkateGPU(gym.Env):
                                      self.state.boardRotation[9],
                                      self.state.boardRotation[10],
                                      self.state.boardRotation[11],
-                                     self.state.boardRotation[12]]).astype(np.float32)}, self.reward, done, info
+                                     self.state.boardRotation[12]]).astype(np.float32)}, self.reward/10.0, done, info
 
     def render(self, mode='human'):
         # render is not in use since Unity game.

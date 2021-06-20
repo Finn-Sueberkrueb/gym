@@ -15,6 +15,13 @@ register(
 )
 
 register(
+    id='RoboSkateSegmentation-v0',
+    entry_point='gym.envs.RoboSkate:RoboSkateSegmentation',
+    max_episode_steps=1000,
+)
+
+
+register(
     id='Copy-v0',
     entry_point='gym.envs.algorithmic:CopyEnv',
     max_episode_steps=200,
