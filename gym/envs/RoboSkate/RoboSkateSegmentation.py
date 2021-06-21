@@ -290,7 +290,7 @@ class RoboSkateSegmentation(gym.Env):
         # Load CNN Model
         self.model = SegmentationNetwork()
         self.model.load_state_dict(
-            torch.load("../scripts/python/RoboSkateIL/agent_models/Segmentation/model.pth", map_location=torch.device('cpu')))
+            torch.load("../scripts/python/RoboSkateIL/agent_models/Segmentation/model_z_dim_8_leanring_1e-4.pth", map_location=torch.device('cpu')))
         self.model.eval()
 
         # Define action and observation space
@@ -304,7 +304,7 @@ class RoboSkateSegmentation(gym.Env):
 
         self.observation_space = spaces.Box(low=-1,
                                             high=1,
-                                            shape=(14+32,),
+                                            shape=(14+8,),
                                             dtype=np.float32)
 
     # ------------------------------------------------------------------------------------------------------------------
