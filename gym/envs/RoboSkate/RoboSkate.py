@@ -404,7 +404,8 @@ class RoboSkate(gym.Env):
         info = {"step": self.stepcount,
                 "xPos": (self.state.boardPosition[0] * max_board_pos_XY),
                 "yPos": (self.state.boardPosition[2] * max_board_pos_XY),
-                "direction error": self.directionError}
+                "direction error": self.directionError,
+                "image": image}
 
         self.stepcount += 1
 
