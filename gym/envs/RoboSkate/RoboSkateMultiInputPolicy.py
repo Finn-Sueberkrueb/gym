@@ -20,6 +20,10 @@ import io
 from PIL import Image
 import socket
 import imageio
+import torch
+from torch import nn
+from torchvision.io import read_image
+
 
 # Value Range for observations abs(-Min) = Max
 max_Joint_force = 300.0
@@ -128,7 +132,6 @@ def shutdown(stub):
 # --------------------------------------------------------------------------------
 # ------------------ RoboSkate Game ----------------------------------------------
 # --------------------------------------------------------------------------------
-
 def startRoboSkate(port, graphics_environment):
     if graphics_environment:
         # choose Platform and run with graphics
@@ -153,7 +156,7 @@ def startRoboSkate(port, graphics_environment):
 # --------------------------------------------------------------------------------
 # ------------------ RoboSkate Environment ---------------------------------------
 # --------------------------------------------------------------------------------
-class RoboSkate(gym.Env):
+class RoboSkateMultiInputPolicy(gym.Env):
 
     def is_port_open(self, host, port):
         # determine whether `host` has the `port` open
@@ -173,13 +176,13 @@ class RoboSkate(gym.Env):
                  max_episode_length=1000,
                  startport=50051,
                  rank=-1,
-                 headlessMode=True,
+                 headlessMode=False,
                  AutostartRoboSkate=True,
                  startLevel=0,
-                 cameraWidth=80,
-                 cameraHeight=80):
+                 cameraWidth=200,
+                 cameraHeight=60):
 
-        super(RoboSkate, self).__init__()
+        super(RoboSkateMultiInputPolicy, self).__init__()
 
 
         print("RoboSkate Env start with rank: " + str(rank))
@@ -226,15 +229,22 @@ class RoboSkate(gym.Env):
                                        shape=(3,),
                                        dtype=np.float32)
 
-        self.observation_space = spaces.Box(low=-1,
-                                            high=1,
-                                            shape=(15,),
-                                            dtype=np.float32)
+        self.observation_space = spaces.Dict({"image": spaces.Box(low=0,
+                                                                  high=255,
+                                                                  shape=(3, cameraHeight, cameraWidth),
+                                                                  dtype=np.uint8),
+                                              "numeric": spaces.Box(low=-1,
+                                                                    high=1,
+                                                                    shape=(14,),
+                                                                    dtype=np.float32)
+                                              })
+
+
 
     # ------------------------------------------------------------------------------------------------------------------
     # Calculation of Steering Angle in Level 1 splitted in straight part and kurv.
-    # This function shall be replaced later by image data
-    # everything in degree and meters
+    # After CNN implementation still used for Reward
+
     def calculateSteeringAngleLevel1(self, x_pos, y_pos, x_orientation, y_oriantation):
 
         if x_pos <= 72.5:
@@ -291,8 +301,6 @@ class RoboSkate(gym.Env):
 
     def reset(self):
 
-
-
         initialize(self.stub, str(self.startLevel) + "," + str(self.cameraWidth) + "," + str(self.cameraHeight))
 
         # Set a predefined startposition to make learning easyer
@@ -304,12 +312,15 @@ class RoboSkate(gym.Env):
         # get the current state
         self.state = get_info(self.stub)
 
-        if not(self.headlessMode):
-            # render image in Unity
-            image = get_camera(self.stub, self.stepcount).transpose([2, 0, 1])
-            #imageio.imwrite("./RoboSkate.png", image[0])
-        else:
-            image = 0
+        # render image in Unity
+        image = get_camera(self.stub, self.stepcount).transpose([2, 0, 1])
+        # imageio.imwrite("./RoboSkate.png", image[0])
+
+        # used static face input
+        # image = read_image("../scripts/python/RoboSkateIL/RoboSkateExpertData/Segmentation/RoboSkate-105.jpg")
+        # image = image.cpu().detach().numpy()
+        image = image/255.0
+
 
         self.directionError = self.calculateSteeringAngleLevel1(self.state.boardPosition[0] * max_board_pos_XY,
                                                                self.state.boardPosition[2] * max_board_pos_XY,
@@ -317,21 +328,24 @@ class RoboSkate(gym.Env):
                                                                self.state.boardRotation[9])
 
 
-        return np.array([self.state.boardCraneJointAngles[0],
-                         self.state.boardCraneJointAngles[1],
-                         self.state.boardCraneJointAngles[2],
-                         self.state.boardCraneJointAngles[3],
-                         self.state.boardCraneJointAngles[4],
-                         self.state.boardCraneJointAngles[5],
-                         self.state.boardPosition[3],
-                         self.state.boardPosition[5],
-                         self.state.boardRotation[7],
-                         self.state.boardRotation[8],
-                         self.state.boardRotation[9],
-                         self.state.boardRotation[10],
-                         self.state.boardRotation[11],
-                         self.state.boardRotation[12],
-                         self.directionError]).astype(np.float32)
+
+        # Train with image data
+        return {"image": image,
+                "numeric": np.array([self.state.boardCraneJointAngles[0],
+                                     self.state.boardCraneJointAngles[1],
+                                     self.state.boardCraneJointAngles[2],
+                                     self.state.boardCraneJointAngles[3],
+                                     self.state.boardCraneJointAngles[4],
+                                     self.state.boardCraneJointAngles[5],
+                                     self.state.boardPosition[3],
+                                     self.state.boardPosition[5],
+                                     self.state.boardRotation[7],
+                                     self.state.boardRotation[8],
+                                     self.state.boardRotation[9],
+                                     self.state.boardRotation[10],
+                                     self.state.boardRotation[11],
+                                     self.state.boardRotation[12]]).astype(np.float32)}
+
 
 
 
@@ -350,11 +364,15 @@ class RoboSkate(gym.Env):
         # get the current observations
         self.state = get_info(self.stub)
 
-        if not(self.headlessMode):
-            # render image in Unity
-            image = get_camera(self.stub, self.stepcount).transpose([2, 0, 1])
-        else:
-            image = 0
+
+        # render image in Unity
+        image = get_camera(self.stub, self.stepcount).transpose([2, 0, 1])
+        # used static fake input
+        # image = read_image("../scripts/python/RoboSkateIL/RoboSkateExpertData/Segmentation/RoboSkate-105.jpg")
+        # image = image.cpu().detach().numpy()
+        image = image / 255.0
+
+
 
         self.directionError = self.calculateSteeringAngleLevel1(self.state.boardPosition[0] * max_board_pos_XY,
                                                                 self.state.boardPosition[2] * max_board_pos_XY,
@@ -369,8 +387,6 @@ class RoboSkate(gym.Env):
             forward_reward = (self.state.boardPosition[0] - self.oldstate.boardPosition[0]) * max_board_pos_XY + (self.oldstate.boardPosition[2] - self.state.boardPosition[2]) * max_board_pos_XY
 
         self.reward = forward_reward * 50 + directionCorrection * 10
-
-
 
 
         # Termination conditions
@@ -409,22 +425,22 @@ class RoboSkate(gym.Env):
 
         self.stepcount += 1
 
-        return np.array([self.state.boardCraneJointAngles[0],
-                         self.state.boardCraneJointAngles[1],
-                         self.state.boardCraneJointAngles[2],
-                         self.state.boardCraneJointAngles[3],
-                         self.state.boardCraneJointAngles[4],
-                         self.state.boardCraneJointAngles[5],
-                         self.state.boardPosition[3],
-                         self.state.boardPosition[5],
-                         self.state.boardRotation[7],
-                         self.state.boardRotation[8],
-                         self.state.boardRotation[9],
-                         self.state.boardRotation[10],
-                         self.state.boardRotation[11],
-                         self.state.boardRotation[12],
-                         self.directionError]).astype(np.float32), self.reward/10.0, done, info
-
+        # Train with image data
+        return {"image": image,
+                "numeric": np.array([self.state.boardCraneJointAngles[0],
+                                     self.state.boardCraneJointAngles[1],
+                                     self.state.boardCraneJointAngles[2],
+                                     self.state.boardCraneJointAngles[3],
+                                     self.state.boardCraneJointAngles[4],
+                                     self.state.boardCraneJointAngles[5],
+                                     self.state.boardPosition[3],
+                                     self.state.boardPosition[5],
+                                     self.state.boardRotation[7],
+                                     self.state.boardRotation[8],
+                                     self.state.boardRotation[9],
+                                     self.state.boardRotation[10],
+                                     self.state.boardRotation[11],
+                                     self.state.boardRotation[12]]).astype(np.float32)}, self.reward/10.0, done, info
 
     def render(self, mode='human'):
         # render is not in use since Unity game.

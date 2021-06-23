@@ -22,6 +22,7 @@ import socket
 import imageio
 import torch
 from torch import nn
+from torchvision.io import read_image
 
 
 # Value Range for observations abs(-Min) = Max
@@ -167,7 +168,7 @@ class UnFlatten(nn.Module):
 
 # Define model
 class SegmentationNetwork(nn.Module):
-    def __init__(self, image_channels=3, h_dim=2560, z_dim=32):
+    def __init__(self, image_channels=3, h_dim=2560, z_dim=8):
         super(SegmentationNetwork, self).__init__()
 
         self.encoder = nn.Sequential(
@@ -290,7 +291,7 @@ class RoboSkateSegmentation(gym.Env):
         # Load CNN Model
         self.model = SegmentationNetwork()
         self.model.load_state_dict(
-            torch.load("../scripts/python/RoboSkateIL/agent_models/Segmentation/model_z_dim_8_leanring_1e-4.pth", map_location=torch.device('cpu')))
+            torch.load("../scripts/python/RoboSkateIL/agent_models/Segmentation/model_z_dim_8.pth", map_location=torch.device('cpu')))
         self.model.eval()
 
         # Define action and observation space
@@ -378,15 +379,18 @@ class RoboSkateSegmentation(gym.Env):
         # get the current state
         self.state = get_info(self.stub)
 
-        if not(self.headlessMode):
-            # render image in Unity
-            image = get_camera(self.stub, self.stepcount).transpose([2, 0, 1])
-            image = image/255.0
-            with torch.no_grad():
-                cnn_latent_space = self.model(torch.from_numpy(np.array([image])).float())
-        else:
-            image = 0
-            cnn_latent_space = np.zeros(32)
+        # render image in Unity
+        image = get_camera(self.stub, self.stepcount).transpose([2, 0, 1])
+        # imageio.imwrite("./RoboSkate.png", image[0])
+
+        # used static face input
+        # image = read_image("../scripts/python/RoboSkateIL/RoboSkateExpertData/Segmentation/RoboSkate-105.jpg")
+        # image = image.cpu().detach().numpy()
+        image = image/255.0
+
+        with torch.no_grad():
+            cnn_latent_space = self.model(torch.from_numpy(np.array([image])).float())
+
 
         self.directionError = self.calculateSteeringAngleLevel1(self.state.boardPosition[0] * max_board_pos_XY,
                                                                self.state.boardPosition[2] * max_board_pos_XY,
@@ -430,15 +434,17 @@ class RoboSkateSegmentation(gym.Env):
         # get the current observations
         self.state = get_info(self.stub)
 
-        if not (self.headlessMode):
-            # render image in Unity
-            image = get_camera(self.stub, self.stepcount).transpose([2, 0, 1])
-            image = image / 255.0
-            with torch.no_grad():
-                cnn_latent_space = self.model(torch.from_numpy(np.array([image])).float())
-        else:
-            image = 0
-            cnn_latent_space = np.zeros(32)
+
+        # render image in Unity
+        image = get_camera(self.stub, self.stepcount).transpose([2, 0, 1])
+        # used static fake input
+        # image = read_image("../scripts/python/RoboSkateIL/RoboSkateExpertData/Segmentation/RoboSkate-105.jpg")
+        # image = image.cpu().detach().numpy()
+        image = image / 255.0
+        with torch.no_grad():
+            cnn_latent_space = self.model(torch.from_numpy(np.array([image])).float())
+
+
 
         self.directionError = self.calculateSteeringAngleLevel1(self.state.boardPosition[0] * max_board_pos_XY,
                                                                 self.state.boardPosition[2] * max_board_pos_XY,
@@ -486,7 +492,8 @@ class RoboSkateSegmentation(gym.Env):
         info = {"step": self.stepcount,
                 "xPos": (self.state.boardPosition[0] * max_board_pos_XY),
                 "yPos": (self.state.boardPosition[2] * max_board_pos_XY),
-                "direction error": self.directionError}
+                "direction error": self.directionError,
+                "image": image}
 
         self.stepcount += 1
 

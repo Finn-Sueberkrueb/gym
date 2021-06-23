@@ -1,5 +1,5 @@
-from gym.envs.RoboSkate.RoboSkate import RoboSkate
-from gym.envs.RoboSkate.RoboSkateGPU import RoboSkateGPU
+from gym.envs.RoboSkate.RoboSkateNumerical import RoboSkateNumerical
+from gym.envs.RoboSkate.RoboSkateMultiInputPolicy import RoboSkateMultiInputPolicy
 from gym.envs.RoboSkate.RoboSkateSegmentation import RoboSkateSegmentation
 
 

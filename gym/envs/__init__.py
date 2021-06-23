@@ -3,14 +3,14 @@ from gym.envs.registration import registry, register, make, spec
 # Algorithmic
 # ----------------------------------------
 register(
-    id='RoboSkate-v0',
-    entry_point='gym.envs.RoboSkate:RoboSkate',
+    id='RoboSkateNumerical-v0',
+    entry_point='gym.envs.RoboSkate:RoboSkateNumerical',
     max_episode_steps=1000,
 )
 
 register(
-    id='RoboSkateGPU-v0',
-    entry_point='gym.envs.RoboSkate:RoboSkateGPU',
+    id='RoboSkateMultiInputPolicy-v0',
+    entry_point='gym.envs.RoboSkate:RoboSkateMultiInputPolicy',
     max_episode_steps=1000,
 )
 
