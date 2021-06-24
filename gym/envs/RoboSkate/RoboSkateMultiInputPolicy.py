@@ -179,8 +179,8 @@ class RoboSkateMultiInputPolicy(gym.Env):
                  headlessMode=False,
                  AutostartRoboSkate=True,
                  startLevel=0,
-                 cameraWidth=200,
-                 cameraHeight=60):
+                 cameraHeight=30,
+                 cameraWidth=98):
 
         super(RoboSkateMultiInputPolicy, self).__init__()
 
@@ -230,7 +230,7 @@ class RoboSkateMultiInputPolicy(gym.Env):
                                        dtype=np.float32)
 
         self.observation_space = spaces.Dict({"image": spaces.Box(low=0,
-                                                                  high=255,
+                                                                  high=1,
                                                                   shape=(3, cameraHeight, cameraWidth),
                                                                   dtype=np.uint8),
                                               "numeric": spaces.Box(low=-1,
@@ -322,11 +322,11 @@ class RoboSkateMultiInputPolicy(gym.Env):
         image = image/255.0
 
 
+
         self.directionError = self.calculateSteeringAngleLevel1(self.state.boardPosition[0] * max_board_pos_XY,
                                                                self.state.boardPosition[2] * max_board_pos_XY,
                                                                self.state.boardRotation[7],
                                                                self.state.boardRotation[9])
-
 
 
         # Train with image data
