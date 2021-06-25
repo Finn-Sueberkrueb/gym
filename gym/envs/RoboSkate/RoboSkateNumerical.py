@@ -241,21 +241,26 @@ class RoboSkateNumerical(gym.Env):
 
     def calculateSteeringAngleLevel1(self, x_pos, y_pos, x_orientation, y_oriantation):
 
-        if x_pos <= 72.5:
-            # first part drive straight
+        if (x_pos <= 72.5) and (y_pos >= -10.0):
+            # first part drive straight Level 1
             correct_orientation = 0
             correct_yPosition = 0
             position_error = y_pos
-
-        elif (x_pos > 72.5) and (y_pos > -35.21):
-            # Calculate the orientation in the curve by the tangent of a circle
+        elif ((x_pos > 72.5) and (y_pos > -20.0)) or (x_pos > 90.0) and (y_pos > -35.21):
+            # Calculate the orientation in the curve by the tangent of a circle Level 1
             correct_orientation = -math.sin((x_pos - 72.5) * (math.pi / 2) / 35.21) * 90
             correct_radius = 35.21
-            current_radius = math.sqrt( ((x_pos-72.5)**2) + ((y_pos + 35.21)**2))
+            current_radius = math.sqrt(((x_pos - 72.5) ** 2) + ((y_pos + 35.21) ** 2))
             position_error = current_radius - correct_radius
-        else:
+        elif (x_pos > 90.0) and (y_pos <= -35.21) and (y_pos > -73.83):
+            # first 90degree turn in level 2
             correct_orientation = -90
-            position_error = x_pos - 72.5
+            position_error = x_pos - 107.65
+            print("level1_solver case programmed")
+        else:
+            correct_orientation = 0
+            position_error = 0
+            print("level1_solver case not known")
 
 
         # Calculate rotation error
