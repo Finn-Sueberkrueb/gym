@@ -365,10 +365,17 @@ class RoboSkateNumerical(gym.Env):
 
 
         directionCorrection = abs(self.oldirectionError) - abs(self.directionError)
-        if (self.state.boardPosition[0]*max_board_pos_XY) < 72.5:
-            forward_reward = (self.state.boardPosition[0] - self.oldstate.boardPosition[0]) * max_board_pos_XY
-        else:
-            forward_reward = (self.state.boardPosition[0] - self.oldstate.boardPosition[0]) * max_board_pos_XY + (self.oldstate.boardPosition[2] - self.state.boardPosition[2]) * max_board_pos_XY
+
+        # TODO: define Checkpoints in a usefull way. Combine with direction error calculation
+        Checkpoint1 = np.array([107.69, -45.0])
+
+        oldDistancToGoal = abs(Checkpoint1[0] - self.oldstate.boardPosition[0]) + \
+                           abs(Checkpoint1[1] - self.oldstate.boardPosition[2])
+
+        newDistancToGoal = abs(Checkpoint1[0] - self.state.boardPosition[0]) + \
+                           abs(Checkpoint1[1] - self.state.boardPosition[2])
+
+        forward_reward = oldDistancToGoal - newDistancToGoal
 
         self.reward = forward_reward * 50 + directionCorrection * 10
 
@@ -376,25 +383,20 @@ class RoboSkateNumerical(gym.Env):
         # Termination conditions
         if self.stepcount >= self.max_episode_length:
             # Stop if max episode is reached
-            #print("time is up")
             done = True
-        elif self.state.boardPosition[2]* max_board_pos_XY <= -45:
+        elif self.state.boardPosition[2] * max_board_pos_XY <= -45:
             # Stop if checkpoint is reached
-            #print("checkpoint1 reached")
-            self.reward += 200
-            done = False
-        elif self.state.boardPosition[1]* max_board_pos_Z <= -2:
-            # Stop if checkpoint is reached
-            #print("checkpoint1 reached")
+            done = True
+        elif self.state.boardPosition[1] * max_board_pos_Z <= -2:
+            # Stop if fallen from path
+            self.reward -= 200
             done = True
         elif abs(self.state.boardRotation[11]) < 0.40:
             # Stop if board is tipped
-            #print("board is tipped")
             self.reward -= 200
             done = True
         elif abs(self.state.boardCraneJointAngles[3] * max_Joint_vel) > 150:
-            # Stop turning the first joint
-            #print("Helicopter")
+            # Stop if turning the first joint to fast "Helicopter"
             self.reward -= 200
             done = True
         else:
