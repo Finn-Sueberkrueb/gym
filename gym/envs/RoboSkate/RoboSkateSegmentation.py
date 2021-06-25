@@ -291,7 +291,7 @@ class RoboSkateSegmentation(gym.Env):
         # Load CNN Model
         self.model = SegmentationNetwork()
         self.model.load_state_dict(
-            torch.load("../scripts/python/RoboSkateIL/agent_models/Segmentation/model_z_dim_8.pth", map_location=torch.device('cpu')))
+            torch.load("../trained_models/Segmentation/model/model_z_dim_8.pth", map_location=torch.device('cpu')))
         self.model.eval()
 
         # Define action and observation space
