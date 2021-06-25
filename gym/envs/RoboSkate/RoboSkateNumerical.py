@@ -211,6 +211,7 @@ class RoboSkateNumerical(gym.Env):
                 print("RoboSkate started with port: " + str(self.Port))
             else:
                 print("RoboSkate needs to be started manual before.")
+                print(self.Port)
         else:
             print("RoboSkate with port " + str(self.Port) + " already running or port is used from different app.")
 
