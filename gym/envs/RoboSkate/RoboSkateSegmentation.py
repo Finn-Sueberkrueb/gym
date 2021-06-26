@@ -136,22 +136,22 @@ def startRoboSkate(port, graphics_environment):
     if graphics_environment:
         # choose Platform and run with graphics
         if platform == "darwin":
-            var = os.system("nohup ../games/RoboSkate.app/Contents/MacOS/RoboSkate -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
+            var = os.system("nohup ../games/RoboSkate3.app/Contents/MacOS/RoboSkate -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
         elif platform == "linux" or platform == "linux2":
-            var = os.system("nohup ../games/RoboSkate/roboskate.x86_64 -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
+            var = os.system("nohup ../games/RoboSkate3/roboskate.x86_64 -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
         elif platform == "win32":
             print("Running RoboSkate on windows in the background has not been tested yet!")
-            var = os.system("nohup ../games/RoboSkate/RoboSkate.exe -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
+            var = os.system("nohup ../games/RoboSkate3/RoboSkate.exe -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
 
     else:
         # choose Platform and run in batchmode
         if platform == "darwin":
-            var = os.system("nohup ../games/RoboSkate.app/Contents/MacOS/RoboSkate -nographics -batchmode -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
+            var = os.system("nohup ../games/RoboSkate3.app/Contents/MacOS/RoboSkate -nographics -batchmode -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
         elif platform == "linux" or platform == "linux2":
-            var = os.system("nohup ../games/RoboSkate/roboskate.x86_64 -nographics -batchmode  -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
+            var = os.system("nohup ../games/RoboSkate3/roboskate.x86_64 -nographics -batchmode  -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
         elif platform == "win32":
             print("Running RoboSkate on windows in the background has not been tested yet!")
-            var = os.system("nohup ../games/RoboSkate/RoboSkate.exe -nographics -batchmode  -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
+            var = os.system("nohup ../games/RoboSkate3/RoboSkate.exe -nographics -batchmode  -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
 
 
 # --------------------------------------------------------------------------------
@@ -241,7 +241,7 @@ class RoboSkateSegmentation(gym.Env):
             return True
 
     def __init__(self,
-                 max_episode_length=1000,
+                 max_episode_length=2000,
                  startport=50051,
                  rank=-1,
                  headlessMode=False,
@@ -314,41 +314,70 @@ class RoboSkateSegmentation(gym.Env):
 
     def calculateSteeringAngleLevel1(self, x_pos, y_pos, x_orientation, y_oriantation):
 
-        if x_pos <= 72.5:
-            # first part drive straight
+        if (x_pos <= 72.5) and (y_pos >= -10.0):
+            # first part drive straight Level 1
             correct_orientation = 0
-            correct_yPosition = 0
             position_error = y_pos
-
-        elif (x_pos > 72.5) and (y_pos > -35.21):
-            # Calculate the orientation in the curve by the tangent of a circle
+        elif ((x_pos > 72.5) and (y_pos > -20.0)) or (x_pos > 90.0) and (y_pos > -35.21):
+            # Calculate the orientation in the curve by the tangent of a circle Level 1
             correct_orientation = -math.sin((x_pos - 72.5) * (math.pi / 2) / 35.21) * 90
             correct_radius = 35.21
-            current_radius = math.sqrt( ((x_pos-72.5)**2) + ((y_pos + 35.21)**2))
+            current_radius = math.sqrt(((x_pos - 72.5) ** 2) + ((y_pos + 35.21) ** 2))
             position_error = current_radius - correct_radius
-        else:
+        elif (x_pos > 90.0) and (y_pos <= -35.21) and (y_pos > -68.00):
+            # first thin path level 2
             correct_orientation = -90
-            position_error = x_pos - 72.5
-
+            position_error = x_pos - 108
+        elif (x_pos > 100.0) and (y_pos <= -68.00):
+            # first 90degree turn in level 2
+            correct_orientation = 175
+            position_error = -(y_pos + 76.0)
+        elif (x_pos > 88.0) and (y_pos <= -68.00):
+            # second thin path in level 2
+            correct_orientation = -180
+            position_error = -(y_pos + 78)
+        elif (x_pos > 75.0) and (y_pos <= -47.00):
+            # third thin parth in level 2
+            correct_orientation = 90
+            position_error = 80 - x_pos
+        elif (x_pos > 75.0) and (y_pos <= -30.00):
+            # first left curve in level 3
+            correct_orientation = -180
+            position_error = 0
+        elif (x_pos > 60.0) and (y_pos <= -30.00) and (y_pos >= -50.00):
+            # still first left curve in level 3
+            correct_orientation = -90
+            position_error = 0
+        elif (x_pos > 57.0) and (y_pos <= -30.00):
+            # first right curve in level 3
+            correct_orientation = -180
+            position_error = 0
+        elif (x_pos > 40.0) and (y_pos <= -30.00):
+            # last strait part in level 3
+            correct_orientation = 90
+            position_error = 48 - x_pos
+        else:
+            correct_orientation = 0
+            position_error = 0
+            print("case else")
 
         # Calculate rotation error
         # Normalization
-        x_ori = x_orientation / abs(x_orientation + y_oriantation)
-        y_ori = y_oriantation / abs(x_orientation + y_oriantation)
+        x_ori = x_orientation / (abs(x_orientation) + abs(y_oriantation))
+        y_ori = y_oriantation / (abs(x_orientation) + abs(y_oriantation))
 
-        if x_ori >= 0:
-            current_orientation = math.atan(y_ori / x_ori) * 90
+        current_orientation = np.arctan2(y_ori, x_ori) * 180.0 / math.pi
+
+        if abs(current_orientation - correct_orientation) > 180:
+            # case where we go over the +-180°
+            rotation_error = -(360 - abs(current_orientation - correct_orientation)) * np.sign(
+                current_orientation - correct_orientation)
         else:
-            if y_ori >= 0:
-                current_orientation = 180 - math.atan(y_ori / abs(x_ori)) * 90
-            else:
-                current_orientation = -180 - math.atan(y_ori / abs(x_ori)) * 90
-
-        rotation_error = (current_orientation - correct_orientation)
+            rotation_error = (current_orientation - correct_orientation)
 
         direction_error = (-1) * np.clip(rotation_error + position_error * 5, -25, 25)
 
-        return direction_error
+        return direction_error, correct_orientation
 
 
     # ------------------------------------------------------------------------------------------------------------------
@@ -392,7 +421,7 @@ class RoboSkateSegmentation(gym.Env):
             cnn_latent_space = self.model(torch.from_numpy(np.array([image])).float())
 
 
-        self.directionError = self.calculateSteeringAngleLevel1(self.state.boardPosition[0] * max_board_pos_XY,
+        self.directionError, correct_orientation = self.calculateSteeringAngleLevel1(self.state.boardPosition[0] * max_board_pos_XY,
                                                                self.state.boardPosition[2] * max_board_pos_XY,
                                                                self.state.boardRotation[7],
                                                                self.state.boardRotation[9])
@@ -445,45 +474,55 @@ class RoboSkateSegmentation(gym.Env):
             cnn_latent_space = self.model(torch.from_numpy(np.array([image])).float())
 
 
-
-        self.directionError = self.calculateSteeringAngleLevel1(self.state.boardPosition[0] * max_board_pos_XY,
+        self.directionError, correct_orientation = self.calculateSteeringAngleLevel1(self.state.boardPosition[0] * max_board_pos_XY,
                                                                 self.state.boardPosition[2] * max_board_pos_XY,
                                                                 self.state.boardRotation[7],
                                                                 self.state.boardRotation[9])
 
 
         directionCorrection = abs(self.oldirectionError) - abs(self.directionError)
-        if (self.state.boardPosition[0]*max_board_pos_XY) < 72.5:
-            forward_reward = (self.state.boardPosition[0] - self.oldstate.boardPosition[0]) * max_board_pos_XY
-        else:
-            forward_reward = (self.state.boardPosition[0] - self.oldstate.boardPosition[0]) * max_board_pos_XY + (self.oldstate.boardPosition[2] - self.state.boardPosition[2]) * max_board_pos_XY
 
-        self.reward = forward_reward * 50 + directionCorrection * 10
+        # TODO: define Checkpoints in a usefull way. Combine with direction error calculation
+
+        traveled_dictance_x = self.state.boardPosition[0] - self.oldstate.boardPosition[0]
+        traveled_dictance_y = self.state.boardPosition[2] - self.oldstate.boardPosition[2]
+
+        traveld_direction = np.arctan2(traveled_dictance_y, traveled_dictance_x) * 180.0 / math.pi
+
+        if abs(traveld_direction-correct_orientation) > 180:
+            # case where we go over the +-180°
+            travel_error = -(360 - abs(traveld_direction - correct_orientation)) * np.sign(
+                traveld_direction - correct_orientation)
+        else:
+            travel_error = (traveld_direction - correct_orientation)
+
+        forward_reward = ((180 - abs(travel_error))/180) * math.sqrt(traveled_dictance_y ** 2 + traveled_dictance_x ** 2)
+
+        #print(str(forward_reward * 5000) + " ### " + str(directionCorrection * 10))
+
+        self.reward = forward_reward * 5000 + directionCorrection * 10
 
 
         # Termination conditions
         if self.stepcount >= self.max_episode_length:
             # Stop if max episode is reached
-            #print("time is up")
             done = True
-        elif self.state.boardPosition[2]* max_board_pos_XY <= -45:
-            # Stop if checkpoint is reached
-            #print("checkpoint1 reached")
-            self.reward += 200
-            done = False
-        elif self.state.boardPosition[1]* max_board_pos_Z <= -2:
-            # Stop if checkpoint is reached
-            #print("checkpoint1 reached")
+        elif self.state.boardPosition[1] * max_board_pos_Z <= -7:
+            # Stop if fallen from path
+            self.reward -= 1000
             done = True
         elif abs(self.state.boardRotation[11]) < 0.40:
-            # Stop if board is tipped
-            #print("board is tipped")
+            # Stop if board is tiped
             self.reward -= 200
             done = True
         elif abs(self.state.boardCraneJointAngles[3] * max_Joint_vel) > 150:
-            # Stop turning the first joint
-            #print("Helicopter")
+            # Stop if turning the first joint to fast "Helicopter"
             self.reward -= 200
+            done = True
+        elif ((self.state.boardPosition[0] * max_board_pos_XY) > 42) and ((self.state.boardPosition[0] * max_board_pos_XY) < 52) and ((self.state.boardPosition[2] * max_board_pos_XY) > -42) and ((self.state.boardPosition[2] * max_board_pos_XY) < -38):
+            # Goal reached
+            self.reward += 8000
+            print("goal")
             done = True
         else:
             done = False
