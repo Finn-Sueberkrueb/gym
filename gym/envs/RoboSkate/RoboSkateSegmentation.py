@@ -48,7 +48,7 @@ def initialize(stub, string):
     if reply.success != bytes('0', encoding='utf8'):
         print("Initialize failure")
 
-# This function should tell if the connection to roboskate is possible
+# This function should tell if the connection to RoboSkate is possible
 def isRunning(stub):
     try:
         reply = stub.initialize(InitializeRequest(json="0,10,10"))
@@ -61,7 +61,7 @@ def isRunning(stub):
             print("Something went wrong with RoboSkate.")
             return False
         else:
-            # Connection possible and positiv awnser
+            # Connection possible and positive response
             return True
 
 
@@ -130,7 +130,7 @@ def shutdown(stub):
 
 
 # --------------------------------------------------------------------------------
-# ------------------ RoboSkate Game ----------------------------------------------
+# ------------------ Start RoboSkate Game ----------------------------------------
 # --------------------------------------------------------------------------------
 def startRoboSkate(port, graphics_environment):
     if graphics_environment:
@@ -241,12 +241,14 @@ class RoboSkateSegmentation(gym.Env):
             return True
 
     def __init__(self,
-                 max_episode_length=2000,
+                 max_episode_length=3000,
                  startport=50051,
                  rank=-1,
+                 small_checkpoint_radius=True,
                  headlessMode=False,
                  AutostartRoboSkate=True,
                  startLevel=0,
+                 random_start_level=False,
                  cameraWidth=200,
                  cameraHeight=60):
 
@@ -254,13 +256,40 @@ class RoboSkateSegmentation(gym.Env):
 
 
         print("RoboSkate Env start with rank: " + str(rank))
+        self.max_episode_length = max_episode_length
+        self.Port = startport + rank
+        self.headlessMode = headlessMode
         self.startLevel = startLevel
+        self.random_start_level = random_start_level
         self.cameraWidth = cameraWidth
         self.cameraHeight = cameraHeight
-        self.headlessMode = headlessMode
-        self.Port = startport + rank
-        self.max_episode_length = max_episode_length
 
+
+        # x position, y position, checkpoint radius
+        self.checkpoints = np.array([[  30,   0, 5], # 0 - Level 0
+                                     [  55,   0, 5],
+                                     [  72,   0, 5],
+                                     [  97, -10, 5],
+                                     [ 108, -35, 5],
+                                     [ 108, -77, 4],  # 5 - Level 1
+                                     [80.5, -76, 3],
+                                     [80.5, -65, 3],
+                                     [  80, -48, 3],  # 8 - Level 2
+                                     [  72, -38, 3],
+                                     [  64, -45, 3],
+                                     [  60, -55, 3],
+                                     [  49, -53, 3],
+                                     [47.5, -40, 3],
+                                     [47.5, -30, 3]])
+
+        if small_checkpoint_radius:
+            # set all radius to 1
+            self.checkpoints[:,2] = 1
+
+
+        self.start_checkpoint_for_level = {0: 0,
+                                           1: 5,
+                                           2: 8}
 
         # gRPC channel
         address = 'localhost:' + str(self.Port)
@@ -309,75 +338,42 @@ class RoboSkateSegmentation(gym.Env):
                                             dtype=np.float32)
 
     # ------------------------------------------------------------------------------------------------------------------
-    # Calculation of Steering Angle in Level 1 splitted in straight part and kurv.
-    # After CNN implementation still used for Reward
+    # Calculation of Steering Angle based on checkpoints
 
-    def calculateSteeringAngleLevel1(self, x_pos, y_pos, x_orientation, y_oriantation):
+    def checkpoint_follower(self, x_pos, y_pos, x_orientation, y_oriantation):
+        checkpoint_reached = False
 
-        if (x_pos <= 72.5) and (y_pos >= -10.0):
-            # first part drive straight Level 1
-            correct_orientation = 0
-            position_error = y_pos
-        elif ((x_pos > 72.5) and (y_pos > -20.0)) or (x_pos > 90.0) and (y_pos > -35.21):
-            # Calculate the orientation in the curve by the tangent of a circle Level 1
-            correct_orientation = -math.sin((x_pos - 72.5) * (math.pi / 2) / 35.21) * 90
-            correct_radius = 35.21
-            current_radius = math.sqrt(((x_pos - 72.5) ** 2) + ((y_pos + 35.21) ** 2))
-            position_error = current_radius - correct_radius
-        elif (x_pos > 90.0) and (y_pos <= -35.21) and (y_pos > -68.00):
-            # first thin path level 2
-            correct_orientation = -90
-            position_error = x_pos - 108
-        elif (x_pos > 100.0) and (y_pos <= -68.00):
-            # first 90degree turn in level 2
-            correct_orientation = 175
-            position_error = -(y_pos + 76.0)
-        elif (x_pos > 88.0) and (y_pos <= -68.00):
-            # second thin path in level 2
-            correct_orientation = -180
-            position_error = -(y_pos + 78)
-        elif (x_pos > 75.0) and (y_pos <= -47.00):
-            # third thin parth in level 2
-            correct_orientation = 90
-            position_error = 80 - x_pos
-        elif (x_pos > 75.0) and (y_pos <= -30.00):
-            # first left curve in level 3
-            correct_orientation = -180
-            position_error = 0
-        elif (x_pos > 60.0) and (y_pos <= -30.00) and (y_pos >= -50.00):
-            # still first left curve in level 3
-            correct_orientation = -90
-            position_error = 0
-        elif (x_pos > 57.0) and (y_pos <= -30.00):
-            # first right curve in level 3
-            correct_orientation = -180
-            position_error = 0
-        elif (x_pos > 40.0) and (y_pos <= -30.00):
-            # last strait part in level 3
-            correct_orientation = 90
-            position_error = 48 - x_pos
-        else:
-            correct_orientation = 0
-            position_error = 0
-            print("case else")
+        # get current position and orientation
+        position = np.array([x_pos, y_pos])
+        orientation = np.array([x_orientation, y_oriantation])
+        # Normalize orientation
+        orientation = orientation / np.linalg.norm(orientation)
+
+        # calculate distance to next checkpoint
+        distance_to_next_checkpoint = self.checkpoints[self.next_checkpoint][:2] - position
+
+        if (np.linalg.norm([distance_to_next_checkpoint]) <= self.checkpoints[self.next_checkpoint][2]):
+            # closer to checkpoint than checkpoint radius
+            self.next_checkpoint += 1
+            checkpoint_reached = True
+            # re calculate distance to next checkpoint since new checkpoint
+            distance_to_next_checkpoint = self.checkpoints[self.next_checkpoint][:2] - position
+
+        # calculate angle towards next checkpoint
+        direction_to_next_checkpoint = np.arctan2(distance_to_next_checkpoint[1],
+                                                  distance_to_next_checkpoint[0]) * 180 / math.pi
 
         # Calculate rotation error
-        # Normalization
-        x_ori = x_orientation / (abs(x_orientation) + abs(y_oriantation))
-        y_ori = y_oriantation / (abs(x_orientation) + abs(y_oriantation))
+        current_orientation = np.arctan2(orientation[1], orientation[0]) * 180 / math.pi
 
-        current_orientation = np.arctan2(y_ori, x_ori) * 180.0 / math.pi
-
-        if abs(current_orientation - correct_orientation) > 180:
+        if abs(current_orientation - direction_to_next_checkpoint) > 180:
             # case where we go over the +-180°
-            rotation_error = -(360 - abs(current_orientation - correct_orientation)) * np.sign(
-                current_orientation - correct_orientation)
+            rotation_error = -(360 - abs(current_orientation - direction_to_next_checkpoint)) * np.sign(
+                current_orientation - direction_to_next_checkpoint)
         else:
-            rotation_error = (current_orientation - correct_orientation)
+            rotation_error = (current_orientation - direction_to_next_checkpoint)
 
-        direction_error = (-1) * np.clip(rotation_error + position_error * 5, -25, 25)
-
-        return direction_error, correct_orientation
+        return np.linalg.norm([distance_to_next_checkpoint]), -rotation_error, checkpoint_reached
 
 
     # ------------------------------------------------------------------------------------------------------------------
@@ -397,9 +393,19 @@ class RoboSkateSegmentation(gym.Env):
 
     def reset(self):
 
+        self.rewardsum = 0
+
+        # set start level
+        if self.random_start_level:
+            self.startLevel = np.random.randint(3)
+
+        # set corresponding checkpoint for startLevel
+        self.next_checkpoint = self.start_checkpoint_for_level[self.startLevel]
+
+        # Reset environoment
         initialize(self.stub, str(self.startLevel) + "," + str(self.cameraWidth) + "," + str(self.cameraHeight))
 
-        # Set a predefined startposition to make learning easyer
+        # set a predefined starting position to assist learning
         self.setstartposition()
 
         self.start = time.time()
@@ -420,12 +426,13 @@ class RoboSkateSegmentation(gym.Env):
         with torch.no_grad():
             cnn_latent_space = self.model(torch.from_numpy(np.array([image])).float())
 
+        distance_to_next_checkpoint, self.steering_angle, _ = self.checkpoint_follower(self.state.boardPosition[0] * max_board_pos_XY,
+                                                             self.state.boardPosition[2] * max_board_pos_XY,
+                                                             self.state.boardRotation[7],
+                                                             self.state.boardRotation[9])
 
-        self.directionError, correct_orientation = self.calculateSteeringAngleLevel1(self.state.boardPosition[0] * max_board_pos_XY,
-                                                               self.state.boardPosition[2] * max_board_pos_XY,
-                                                               self.state.boardRotation[7],
-                                                               self.state.boardRotation[9])
-
+        self.old_steering_angle = self.steering_angle
+        self.old_distance_to_next_checkpoint = distance_to_next_checkpoint
 
         numerical_observations = np.array([ self.state.boardCraneJointAngles[0],
                                             self.state.boardCraneJointAngles[1],
@@ -457,9 +464,6 @@ class RoboSkateSegmentation(gym.Env):
         # Run RoboSkate Game for time 0.2s
         run_game(self.stub, 0.2)
 
-        self.oldstate = self.state
-        self.oldirectionError = self.directionError
-
         # get the current observations
         self.state = get_info(self.stub)
 
@@ -474,67 +478,71 @@ class RoboSkateSegmentation(gym.Env):
             cnn_latent_space = self.model(torch.from_numpy(np.array([image])).float())
 
 
-        self.directionError, correct_orientation = self.calculateSteeringAngleLevel1(self.state.boardPosition[0] * max_board_pos_XY,
-                                                                self.state.boardPosition[2] * max_board_pos_XY,
-                                                                self.state.boardRotation[7],
-                                                                self.state.boardRotation[9])
+
+        distance_to_next_checkpoint, \
+        self.steering_angle, \
+        checkpoint_reached = self.checkpoint_follower(self.state.boardPosition[0] * max_board_pos_XY,
+                                                      self.state.boardPosition[2] * max_board_pos_XY,
+                                                      self.state.boardRotation[7],
+                                                      self.state.boardRotation[9])
 
 
-        directionCorrection = abs(self.oldirectionError) - abs(self.directionError)
-
-        # TODO: define Checkpoints in a usefull way. Combine with direction error calculation
-
-        traveled_dictance_x = self.state.boardPosition[0] - self.oldstate.boardPosition[0]
-        traveled_dictance_y = self.state.boardPosition[2] - self.oldstate.boardPosition[2]
-
-        traveld_direction = np.arctan2(traveled_dictance_y, traveled_dictance_x) * 180.0 / math.pi
-
-        if abs(traveld_direction-correct_orientation) > 180:
-            # case where we go over the +-180°
-            travel_error = -(360 - abs(traveld_direction - correct_orientation)) * np.sign(
-                traveld_direction - correct_orientation)
+        if checkpoint_reached:
+            # Do not use distance to next checkpoint at checkpoint since it jumps to next checkpoints distance
+            self.reward = 3
+            #print("checkpoint %3.2f" % (self.reward))
         else:
-            travel_error = (traveld_direction - correct_orientation)
+            driving_reward = self.old_distance_to_next_checkpoint - distance_to_next_checkpoint
+            steering_reward = abs(self.old_steering_angle) - abs(self.steering_angle)
 
-        forward_reward = ((180 - abs(travel_error))/180) * math.sqrt(traveled_dictance_y ** 2 + traveled_dictance_x ** 2)
+            # if the steering angle is high, concentrate more on correction the direction than going forward.
+            steering_weight = np.clip(abs(self.steering_angle), 0, 20)
 
-        #print(str(forward_reward * 5000) + " ### " + str(directionCorrection * 10))
+            self.reward = driving_reward*5 + steering_reward*1
 
-        self.reward = forward_reward * 5000 + directionCorrection * 10
+            #print("steering %3.2f | driving %3.2f | reward %3.2f" % (steering_reward*0.2, driving_reward*5, self.reward))
 
 
+        self.old_steering_angle = self.steering_angle
+        self.old_distance_to_next_checkpoint = distance_to_next_checkpoint
+
+        done = False
         # Termination conditions
-        if self.stepcount >= self.max_episode_length:
+        if self.next_checkpoint >= (self.checkpoints.shape[0]-1):
+            # final end reached, last checkpoint is outside the path
+            done = True
+            print("final end reached")
+        elif self.stepcount >= self.max_episode_length:
             # Stop if max episode is reached
             done = True
+            print("episode end at checkpoint: " + str(self.next_checkpoint))
         elif self.state.boardPosition[1] * max_board_pos_Z <= -7:
             # Stop if fallen from path
-            self.reward -= 1000
+            self.reward -= 15
+            print("fallen from path")
             done = True
         elif abs(self.state.boardRotation[11]) < 0.40:
-            # Stop if board is tiped
-            self.reward -= 200
-            done = True
+            # Stop if board is tipped
+            self.reward -= 10
+            print("board tipped")
         elif abs(self.state.boardCraneJointAngles[3] * max_Joint_vel) > 150:
             # Stop if turning the first joint to fast "Helicopter"
-            self.reward -= 200
+            self.reward -= 10
+            print("Helicopter")
             done = True
-        elif ((self.state.boardPosition[0] * max_board_pos_XY) > 42) and ((self.state.boardPosition[0] * max_board_pos_XY) < 52) and ((self.state.boardPosition[2] * max_board_pos_XY) > -42) and ((self.state.boardPosition[2] * max_board_pos_XY) < -38):
-            # Goal reached
-            self.reward += 8000
-            print("goal")
-            done = True
-        else:
-            done = False
+
 
         # additional information that will be shared
         info = {"step": self.stepcount,
                 "xPos": (self.state.boardPosition[0] * max_board_pos_XY),
                 "yPos": (self.state.boardPosition[2] * max_board_pos_XY),
-                "direction error": self.directionError,
                 "image": image}
 
         self.stepcount += 1
+
+        # Output reward in Excel copy and paste appropriate format.
+        self.rewardsum += self.reward
+        # print(("%3.2f\t %3.2f" % (self.rewardsum, self.reward)).replace(".",","))
 
         numerical_observations = np.array([self.state.boardCraneJointAngles[0],
                                            self.state.boardCraneJointAngles[1],

@@ -175,13 +175,14 @@ class RoboSkateNumerical(gym.Env):
             return True
 
     def __init__(self,
-                 max_episode_length=1000,
+                 max_episode_length=3000,
                  startport=50051,
                  rank=-1,
+                 small_checkpoint_radius=True,
                  headlessMode=True,
                  AutostartRoboSkate=True,
                  startLevel=0,
-                 random_start_level=True,
+                 random_start_level=False,
                  cameraWidth=200,
                  cameraHeight=60):
 
@@ -197,41 +198,32 @@ class RoboSkateNumerical(gym.Env):
         self.cameraWidth = cameraWidth
         self.cameraHeight = cameraHeight
 
+
         # x position, y position, checkpoint radius
-        self.checkpoints = np.array([[  72,   0, 1], # Level 0
-                                     [  97, -10, 1],
-                                     [ 108, -35, 1],
-                                     [ 108, -77, 1], # Level 1
-                                     [80.5, -76, 1],
-                                     [80.5, -65, 1],
-                                     [  80, -48, 1], # Level 2
-                                     [  72, -38, 1],
-                                     [  64, -45, 1],
-                                     [  60, -55, 1],
-                                     [  49, -53, 1],
-                                     [47.5, -40, 1],
-                                     [47.5, -30, 1]])
-        '''
-        # x position, y position, checkpoint radius
-        self.checkpoints = np.array([[72, 0, 5],  # Level 0
-                                     [97, -10, 5],
-                                     [108, -35, 5],
-                                     [108, -77, 4],  # Level 1
+        self.checkpoints = np.array([[  30,   0, 5], # 0 - Level 0
+                                     [  55,   0, 5],
+                                     [  72,   0, 5],
+                                     [  97, -10, 5],
+                                     [ 108, -35, 5],
+                                     [ 108, -77, 4],  # 5 - Level 1
                                      [80.5, -76, 3],
                                      [80.5, -65, 3],
-                                     [80, -48, 3],  # Level 2
-                                     [72, -38, 3],
-                                     [64, -45, 3],
-                                     [60, -55, 3],
-                                     [49, -53, 3],
+                                     [  80, -48, 3],  # 8 - Level 2
+                                     [  72, -38, 3],
+                                     [  64, -45, 3],
+                                     [  60, -55, 3],
+                                     [  49, -53, 3],
                                      [47.5, -40, 3],
                                      [47.5, -30, 3]])
-        '''
+
+        if small_checkpoint_radius:
+            # set all radius to 1
+            self.checkpoints[:,2] = 1
 
 
         self.start_checkpoint_for_level = {0: 0,
-                                           1: 3,
-                                           2: 6}
+                                           1: 5,
+                                           2: 8}
 
         # gRPC channel
         address = 'localhost:' + str(self.Port)
@@ -307,9 +299,9 @@ class RoboSkateNumerical(gym.Env):
             rotation_error = -(360 - abs(current_orientation - direction_to_next_checkpoint)) * np.sign(
                 current_orientation - direction_to_next_checkpoint)
         else:
-            rotation_error = (-1)*(current_orientation - direction_to_next_checkpoint)
+            rotation_error = (current_orientation - direction_to_next_checkpoint)
 
-        return np.linalg.norm([distance_to_next_checkpoint]), rotation_error, checkpoint_reached
+        return np.linalg.norm([distance_to_next_checkpoint]), -rotation_error, checkpoint_reached
 
 
     # ------------------------------------------------------------------------------------------------------------------
@@ -329,6 +321,8 @@ class RoboSkateNumerical(gym.Env):
 
     def reset(self):
 
+        self.rewardsum = 0
+
         # set start level
         if self.random_start_level:
             self.startLevel = np.random.randint(3)
@@ -339,7 +333,6 @@ class RoboSkateNumerical(gym.Env):
         # Reset environoment
         initialize(self.stub, str(self.startLevel) + "," + str(self.cameraWidth) + "," + str(self.cameraHeight))
 
-        # TODO: delete???
         # set a predefined starting position to assist learning
         self.setstartposition()
 
@@ -349,12 +342,12 @@ class RoboSkateNumerical(gym.Env):
         # get the current state
         self.state = get_info(self.stub)
 
-
         distance_to_next_checkpoint, self.steering_angle, _ = self.checkpoint_follower(self.state.boardPosition[0] * max_board_pos_XY,
                                                              self.state.boardPosition[2] * max_board_pos_XY,
                                                              self.state.boardRotation[7],
                                                              self.state.boardRotation[9])
 
+        self.old_steering_angle = self.steering_angle
         self.old_distance_to_next_checkpoint = distance_to_next_checkpoint
 
         return np.array([self.state.boardCraneJointAngles[0],
@@ -384,8 +377,6 @@ class RoboSkateNumerical(gym.Env):
         # Run RoboSkate Game for time 0.2s
         run_game(self.stub, 0.2)
 
-        #self.oldstate = self.state
-
         # get the current observations
         self.state = get_info(self.stub)
 
@@ -397,39 +388,56 @@ class RoboSkateNumerical(gym.Env):
 
 
 
-        distance_to_next_checkpoint, self.steering_angle, checkpoint_reached = self.checkpoint_follower(self.state.boardPosition[0] * max_board_pos_XY,
-                                                                self.state.boardPosition[2] * max_board_pos_XY,
-                                                                self.state.boardRotation[7],
-                                                                self.state.boardRotation[9])
+        distance_to_next_checkpoint, \
+        self.steering_angle, \
+        checkpoint_reached = self.checkpoint_follower(self.state.boardPosition[0] * max_board_pos_XY,
+                                                      self.state.boardPosition[2] * max_board_pos_XY,
+                                                      self.state.boardRotation[7],
+                                                      self.state.boardRotation[9])
 
 
         if checkpoint_reached:
             # Do not use distance to next checkpoint at checkpoint since it jumps to next checkpoints distance
-            self.reward = 1
+            self.reward = 3
+            #print("checkpoint %3.2f" % (self.reward))
         else:
-            self.reward = self.old_distance_to_next_checkpoint - distance_to_next_checkpoint
+            driving_reward = self.old_distance_to_next_checkpoint - distance_to_next_checkpoint
+            steering_reward = abs(self.old_steering_angle) - abs(self.steering_angle)
+
+            # if the steering angle is high, concentrate more on correction the direction than going forward.
+            steering_weight = np.clip(abs(self.steering_angle), 0, 20)
+
+            self.reward = driving_reward*5 + steering_reward*1
+
+            #print("steering %3.2f | driving %3.2f | reward %3.2f" % (steering_reward*0.2, driving_reward*5, self.reward))
 
 
+        self.old_steering_angle = self.steering_angle
         self.old_distance_to_next_checkpoint = distance_to_next_checkpoint
 
         done = False
         # Termination conditions
-        if self.next_checkpoint >= 12:
-            # final end reached
+        if self.next_checkpoint >= (self.checkpoints.shape[0]-1):
+            # final end reached, last checkpoint is outside the path
             done = True
+            print("final end reached")
         elif self.stepcount >= self.max_episode_length:
             # Stop if max episode is reached
             done = True
+            print("episode end at checkpoint: " + str(self.next_checkpoint))
         elif self.state.boardPosition[1] * max_board_pos_Z <= -7:
             # Stop if fallen from path
-            self.reward -= 5
+            self.reward -= 15
+            print("fallen from path")
             done = True
         elif abs(self.state.boardRotation[11]) < 0.40:
             # Stop if board is tipped
-            self.reward -= 2
+            self.reward -= 10
+            print("board tipped")
         elif abs(self.state.boardCraneJointAngles[3] * max_Joint_vel) > 150:
             # Stop if turning the first joint to fast "Helicopter"
-            self.reward -= 2
+            self.reward -= 10
+            print("Helicopter")
             done = True
 
 
@@ -440,6 +448,10 @@ class RoboSkateNumerical(gym.Env):
                 "image": image}
 
         self.stepcount += 1
+
+        # Output reward in Excel copy and paste appropriate format.
+        self.rewardsum += self.reward
+        # print(("%3.2f\t %3.2f" % (self.rewardsum, self.reward)).replace(".",","))
 
         return np.array([self.state.boardCraneJointAngles[0],
                          self.state.boardCraneJointAngles[1],
