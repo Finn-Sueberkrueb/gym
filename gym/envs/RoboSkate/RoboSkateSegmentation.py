@@ -136,22 +136,22 @@ def startRoboSkate(port, graphics_environment):
     if graphics_environment:
         # choose Platform and run with graphics
         if platform == "darwin":
-            var = os.system("nohup ../games/RoboSkate3.app/Contents/MacOS/RoboSkate -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
+            var = os.system("nohup ../games/RoboSkate.app/Contents/MacOS/RoboSkate -screen-height 200 -screen-width 300 -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
         elif platform == "linux" or platform == "linux2":
-            var = os.system("nohup ../games/RoboSkate3/roboskate.x86_64 -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
+            var = os.system("nohup ../games/RoboSkate/roboskate.x86_64 -screen-height 200 -screen-width 300 -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
         elif platform == "win32":
             print("Running RoboSkate on windows in the background has not been tested yet!")
-            var = os.system("nohup ../games/RoboSkate3/RoboSkate.exe -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
+            var = os.system("nohup ../games/RoboSkate/RoboSkate.exe -screen-height 200 -screen-width 300 -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
 
     else:
         # choose Platform and run in batchmode
         if platform == "darwin":
-            var = os.system("nohup ../games/RoboSkate3.app/Contents/MacOS/RoboSkate -nographics -batchmode -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
+            var = os.system("nohup ../games/RoboSkate.app/Contents/MacOS/RoboSkate -nographics -batchmode -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
         elif platform == "linux" or platform == "linux2":
-            var = os.system("nohup ../games/RoboSkate3/roboskate.x86_64 -nographics -batchmode  -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
+            var = os.system("nohup ../games/RoboSkate/roboskate.x86_64 -nographics -batchmode  -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
         elif platform == "win32":
             print("Running RoboSkate on windows in the background has not been tested yet!")
-            var = os.system("nohup ../games/RoboSkate3/RoboSkate.exe -nographics -batchmode  -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
+            var = os.system("nohup ../games/RoboSkate/RoboSkate.exe -nographics -batchmode  -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
 
 
 # --------------------------------------------------------------------------------
@@ -241,7 +241,7 @@ class RoboSkateSegmentation(gym.Env):
             return True
 
     def __init__(self,
-                 max_episode_length=3000,
+                 max_episode_length=1000,
                  startport=50051,
                  rank=-1,
                  small_checkpoint_radius=True,
@@ -263,6 +263,8 @@ class RoboSkateSegmentation(gym.Env):
         self.random_start_level = random_start_level
         self.cameraWidth = cameraWidth
         self.cameraHeight = cameraHeight
+        self.old_steering_angle = 0
+        self.old_distance_to_next_checkpoint = 0
 
 
         # x position, y position, checkpoint radius
@@ -416,11 +418,6 @@ class RoboSkateSegmentation(gym.Env):
 
         # render image in Unity
         image = get_camera(self.stub, self.stepcount).transpose([2, 0, 1])
-        # imageio.imwrite("./RoboSkate.png", image[0])
-
-        # used static face input
-        # image = read_image("../scripts/python/RoboSkateIL/RoboSkateExpertData/Segmentation/RoboSkate-105.jpg")
-        # image = image.cpu().detach().numpy()
         image = image/255.0
 
         with torch.no_grad():
@@ -458,7 +455,6 @@ class RoboSkateSegmentation(gym.Env):
     def step(self, action):
         # set the actions
         # The observation will be the board state information like position, velocity and angle
-
         set_info(self.stub, action[0], action[1], action[2])
 
         # Run RoboSkate Game for time 0.2s
@@ -467,17 +463,13 @@ class RoboSkateSegmentation(gym.Env):
         # get the current observations
         self.state = get_info(self.stub)
 
-
         # render image in Unity
         image = get_camera(self.stub, self.stepcount).transpose([2, 0, 1])
-        # used static fake input
-        # image = read_image("../scripts/python/RoboSkateIL/RoboSkateExpertData/Segmentation/RoboSkate-105.jpg")
-        # image = image.cpu().detach().numpy()
+        #imageio.imwrite("./RoboSkateR.png", image[0])
         image = image / 255.0
+
         with torch.no_grad():
             cnn_latent_space = self.model(torch.from_numpy(np.array([image])).float())
-
-
 
         distance_to_next_checkpoint, \
         self.steering_angle, \
@@ -486,21 +478,13 @@ class RoboSkateSegmentation(gym.Env):
                                                       self.state.boardRotation[7],
                                                       self.state.boardRotation[9])
 
-
         if checkpoint_reached:
             # Do not use distance to next checkpoint at checkpoint since it jumps to next checkpoints distance
             self.reward = 3
-            #print("checkpoint %3.2f" % (self.reward))
         else:
             driving_reward = self.old_distance_to_next_checkpoint - distance_to_next_checkpoint
             steering_reward = abs(self.old_steering_angle) - abs(self.steering_angle)
-
-            # if the steering angle is high, concentrate more on correction the direction than going forward.
-            steering_weight = np.clip(abs(self.steering_angle), 0, 20)
-
             self.reward = driving_reward*5 + steering_reward*1
-
-            #print("steering %3.2f | driving %3.2f | reward %3.2f" % (steering_reward*0.2, driving_reward*5, self.reward))
 
 
         self.old_steering_angle = self.steering_angle
@@ -508,7 +492,7 @@ class RoboSkateSegmentation(gym.Env):
 
         done = False
         # Termination conditions
-        if self.next_checkpoint >= (self.checkpoints.shape[0]-1):
+        if self.next_checkpoint >= 5: # use only level 1 # (self.checkpoints.shape[0]-1):
             # final end reached, last checkpoint is outside the path
             done = True
             print("final end reached")
@@ -521,10 +505,11 @@ class RoboSkateSegmentation(gym.Env):
             self.reward -= 15
             print("fallen from path")
             done = True
-        elif abs(self.state.boardRotation[11]) < 0.40:
+        elif abs(self.state.boardRotation[11]) < 0.30:
             # Stop if board is tipped
             self.reward -= 10
             print("board tipped")
+            done = True
         elif abs(self.state.boardCraneJointAngles[3] * max_Joint_vel) > 150:
             # Stop if turning the first joint to fast "Helicopter"
             self.reward -= 10
@@ -539,10 +524,6 @@ class RoboSkateSegmentation(gym.Env):
                 "image": image}
 
         self.stepcount += 1
-
-        # Output reward in Excel copy and paste appropriate format.
-        self.rewardsum += self.reward
-        # print(("%3.2f\t %3.2f" % (self.rewardsum, self.reward)).replace(".",","))
 
         numerical_observations = np.array([self.state.boardCraneJointAngles[0],
                                            self.state.boardCraneJointAngles[1],
