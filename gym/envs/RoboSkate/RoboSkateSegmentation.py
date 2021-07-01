@@ -542,7 +542,7 @@ class RoboSkateSegmentation(gym.Env):
 
         # TODO: how to avoid the tensor transformations?
         np_cnn_latent_space = cnn_latent_space.cpu().detach().numpy()[0]
-        return np.concatenate((numerical_observations, np_cnn_latent_space), axis=0), self.reward/10.0, done, info
+        return np.concatenate((numerical_observations, np_cnn_latent_space), axis=0), self.reward, done, info
 
 
     def render(self, mode='human'):

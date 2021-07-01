@@ -9,6 +9,18 @@ register(
 )
 
 register(
+    id='RoboSkateNumericalReduced-v0',
+    entry_point='gym.envs.RoboSkate:RoboSkateNumericalReduced',
+    max_episode_steps=1000,
+)
+
+register(
+    id='RoboSkateSegmentationReduced-v0',
+    entry_point='gym.envs.RoboSkate:RoboSkateSegmentationReduced',
+    max_episode_steps=1000,
+)
+
+register(
     id='RoboSkateMultiInputPolicy-v0',
     entry_point='gym.envs.RoboSkate:RoboSkateMultiInputPolicy',
     max_episode_steps=1000,
