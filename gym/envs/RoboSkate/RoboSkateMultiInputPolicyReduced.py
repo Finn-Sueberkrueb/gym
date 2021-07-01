@@ -154,77 +154,11 @@ def startRoboSkate(port, graphics_environment):
             var = os.system("nohup ../games/RoboSkate3/RoboSkate.exe -nographics -batchmode  -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
 
 
-# --------------------------------------------------------------------------------
-# ------------------ Model -------------------------------------------------------
-# --------------------------------------------------------------------------------
-class Flatten(nn.Module):
-    def forward(self, input):
-        return input.view(input.size(0), -1)
-
-
-class UnFlatten(nn.Module):
-    def forward(self, input, size=256):
-        return input.view(input.size(0), size, 1, 10)
-
-# Define model
-class SegmentationNetwork(nn.Module):
-    def __init__(self, image_channels=3, h_dim=2560, z_dim=8):
-        super(SegmentationNetwork, self).__init__()
-
-        self.encoder = nn.Sequential(
-            nn.Conv2d(image_channels, 32, kernel_size=4, stride=2),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2),
-            nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=4, stride=2),
-            nn.ReLU(),
-            nn.Conv2d(128, 256, kernel_size=4, stride=2),
-            nn.ReLU(),
-            Flatten()
-        )
-
-        self.fc1 = nn.Linear(h_dim, z_dim)
-        self.fc2 = nn.Linear(h_dim, z_dim)
-        self.fc3 = nn.Linear(z_dim, h_dim)
-
-        self.decoder = nn.Sequential(
-            UnFlatten(),
-            nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2),
-            nn.ReLU(),
-            nn.ConvTranspose2d(128, 64, kernel_size=5, stride=2),
-            nn.ReLU(),
-            nn.ConvTranspose2d(64, 32, kernel_size=(8,6), stride=2),
-            nn.ReLU(),
-            nn.ConvTranspose2d(32, 1, kernel_size=6, stride=2),
-            nn.Sigmoid(),
-        )
-
-    def reparameterize(self, mu, logvar):
-        std = logvar.mul(0.5).exp_()
-        # return torch.normal(mu, std)
-        esp = torch.randn(*mu.size())
-        z = mu + std * esp
-        return z
-
-    def bottleneck(self, h):
-        mu, logvar = self.fc1(h), self.fc2(h)
-        z = self.reparameterize(mu, logvar)
-        return z, mu, logvar
-
-
-    def forward(self, x):
-        #print(x.shape) #(14x 3x 200x60)
-        h = self.encoder(x)
-        #print(h.shape) (14x 2560)
-        output, _, _ = self.bottleneck(h)
-        return output
-
-
 
 # --------------------------------------------------------------------------------
 # ------------------ RoboSkate Environment ---------------------------------------
 # --------------------------------------------------------------------------------
-class RoboSkateSegmentation(gym.Env):
+class RoboSkateMultiInputPolicyReduced(gym.Env):
 
     def is_port_open(self, host, port):
         # determine whether `host` has the `port` open
@@ -249,10 +183,10 @@ class RoboSkateSegmentation(gym.Env):
                  AutostartRoboSkate=True,
                  startLevel=0,
                  random_start_level=False,
-                 cameraWidth=200,
-                 cameraHeight=60):
+                 cameraHeight=30,
+                 cameraWidth=98):
 
-        super(RoboSkateSegmentation, self).__init__()
+        super(RoboSkateMultiInputPolicyReduced, self).__init__()
 
 
         print("RoboSkate Env start with rank: " + str(rank))
@@ -319,12 +253,6 @@ class RoboSkateSegmentation(gym.Env):
         self.state = 0
         self.reward = 0
 
-        # Load CNN Model
-        self.model = SegmentationNetwork()
-        self.model.load_state_dict(
-            torch.load("../trained_models/Segmentation/model/model_z_dim_8_early_stop.pth", map_location=torch.device('cuda')))
-        self.model.eval()
-
         # Define action and observation space
         # They must be gym.spaces objects
         # discrete actions: joint1, joint2, joint3
@@ -334,10 +262,17 @@ class RoboSkateSegmentation(gym.Env):
                                        shape=(3,),
                                        dtype=np.float32)
 
-        self.observation_space = spaces.Box(low=-1,
-                                            high=1,
-                                            shape=(14+8,),
-                                            dtype=np.float32)
+        self.observation_space = spaces.Dict({"image": spaces.Box(low=0,
+                                                                  high=1,
+                                                                  shape=(3, cameraHeight, cameraWidth),
+                                                                  dtype=np.uint8),
+                                              "numeric": spaces.Box(low=-1,
+                                                                    high=1,
+                                                                    shape=(11,),
+                                                                    dtype=np.float32)
+                                              })
+
+
 
     # ------------------------------------------------------------------------------------------------------------------
     # Calculation of Steering Angle based on checkpoints
@@ -416,15 +351,9 @@ class RoboSkateSegmentation(gym.Env):
         # get the current state
         self.state = get_info(self.stub)
 
-        if not(self.headlessMode):
-            # render image in Unity
-            image = get_camera(self.stub, self.stepcount).transpose([2, 0, 1])
-            image = image / 255.0
-
-            with torch.no_grad():
-                cnn_latent_space = self.model(torch.from_numpy(np.array([image])).float())
-        else:
-            image = 0
+        # render image in Unity
+        image = get_camera(self.stub, self.stepcount).transpose([2, 0, 1])
+        image = image/255.0
 
         distance_to_next_checkpoint, self.steering_angle, _ = self.checkpoint_follower(self.state.boardPosition[0] * max_board_pos_XY,
                                                              self.state.boardPosition[2] * max_board_pos_XY,
@@ -434,24 +363,20 @@ class RoboSkateSegmentation(gym.Env):
         self.old_steering_angle = self.steering_angle
         self.old_distance_to_next_checkpoint = distance_to_next_checkpoint
 
-        numerical_observations = np.array([ self.state.boardCraneJointAngles[0],
-                                            self.state.boardCraneJointAngles[1],
-                                            self.state.boardCraneJointAngles[2],
-                                            self.state.boardCraneJointAngles[3],
-                                            self.state.boardCraneJointAngles[4],
-                                            self.state.boardCraneJointAngles[5],
-                                            self.state.boardPosition[3],
-                                            self.state.boardPosition[5],
-                                            self.state.boardRotation[7],
-                                            self.state.boardRotation[8],
-                                            self.state.boardRotation[9],
-                                            self.state.boardRotation[10],
-                                            self.state.boardRotation[11],
-                                            self.state.boardRotation[12]]).astype(np.float32)
+        # Train with image data
+        return {"image": image,
+                "numeric": np.array([self.state.boardCraneJointAngles[0],
+                                     self.state.boardCraneJointAngles[1],
+                                     self.state.boardCraneJointAngles[2],
+                                     self.state.boardCraneJointAngles[3],
+                                     self.state.boardCraneJointAngles[4],
+                                     self.state.boardCraneJointAngles[5],
+                                     self.state.boardPosition[3],
+                                     self.state.boardPosition[5],
+                                     self.state.boardRotation[10],
+                                     self.state.boardRotation[11],
+                                     self.state.boardRotation[12]]).astype(np.float32)}
 
-        # TODO: how to avoid the tensor transformations?
-        np_cnn_latent_space = cnn_latent_space.cpu().detach().numpy()[0]
-        return np.concatenate((numerical_observations, np_cnn_latent_space), axis=0)
 
 
 
@@ -466,16 +391,9 @@ class RoboSkateSegmentation(gym.Env):
         # get the current observations
         self.state = get_info(self.stub)
 
-        if not(self.headlessMode):
-            # render image in Unity
-            image = get_camera(self.stub, self.stepcount).transpose([2, 0, 1])
-            # imageio.imwrite("./RoboSkateR.png", image[0])
-            image = image / 255.0
-
-            with torch.no_grad():
-                cnn_latent_space = self.model(torch.from_numpy(np.array([image])).float())
-        else:
-            image = 0
+        # render image in Unity
+        image = get_camera(self.stub, self.stepcount).transpose([2, 0, 1])
+        image = image / 255.0
 
 
 
@@ -535,29 +453,19 @@ class RoboSkateSegmentation(gym.Env):
 
         self.stepcount += 1
 
-        # Output reward in Excel copy and paste appropriate format.
-        # self.rewardsum += self.reward
-        # print(("%3.2f\t %3.2f" % (self.rewardsum, self.reward)).replace(".",","))
-
-        numerical_observations = np.array([self.state.boardCraneJointAngles[0],
-                                           self.state.boardCraneJointAngles[1],
-                                           self.state.boardCraneJointAngles[2],
-                                           self.state.boardCraneJointAngles[3],
-                                           self.state.boardCraneJointAngles[4],
-                                           self.state.boardCraneJointAngles[5],
-                                           self.state.boardPosition[3],
-                                           self.state.boardPosition[5],
-                                           self.state.boardRotation[7],
-                                           self.state.boardRotation[8],
-                                           self.state.boardRotation[9],
-                                           self.state.boardRotation[10],
-                                           self.state.boardRotation[11],
-                                           self.state.boardRotation[12]]).astype(np.float32)
-
-        # TODO: how to avoid the tensor transformations?
-        np_cnn_latent_space = cnn_latent_space.cpu().detach().numpy()[0]
-        return np.concatenate((numerical_observations, np_cnn_latent_space), axis=0), self.reward, done, info
-
+        # Train with image data
+        return {"image": image,
+                "numeric": np.array([self.state.boardCraneJointAngles[0],
+                                     self.state.boardCraneJointAngles[1],
+                                     self.state.boardCraneJointAngles[2],
+                                     self.state.boardCraneJointAngles[3],
+                                     self.state.boardCraneJointAngles[4],
+                                     self.state.boardCraneJointAngles[5],
+                                     self.state.boardPosition[3],
+                                     self.state.boardPosition[5],
+                                     self.state.boardRotation[10],
+                                     self.state.boardRotation[11],
+                                     self.state.boardRotation[12]]).astype(np.float32)}, self.reward/10.0, done, info
 
     def render(self, mode='human'):
         # render is not in use since Unity game.

@@ -3,6 +3,9 @@ from gym.envs.RoboSkate.RoboSkateMultiInputPolicy import RoboSkateMultiInputPoli
 from gym.envs.RoboSkate.RoboSkateSegmentation import RoboSkateSegmentation
 from gym.envs.RoboSkate.RoboSkateNumericalReduced import RoboSkateNumericalReduced
 from gym.envs.RoboSkate.RoboSkateSegmentationReduced import RoboSkateSegmentationReduced
+from gym.envs.RoboSkate.RoboSkateMultiInputPolicyReduced import RoboSkateMultiInputPolicyReduced
+
+
 
 
 
