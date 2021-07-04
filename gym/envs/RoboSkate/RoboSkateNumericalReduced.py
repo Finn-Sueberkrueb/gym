@@ -154,72 +154,6 @@ def startRoboSkate(port, graphics_environment):
             var = os.system("nohup ../games/RoboSkate3/RoboSkate.exe -nographics -batchmode  -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
 
 
-# --------------------------------------------------------------------------------
-# ------------------ Model -------------------------------------------------------
-# --------------------------------------------------------------------------------
-class Flatten(nn.Module):
-    def forward(self, input):
-        return input.view(input.size(0), -1)
-
-
-class UnFlatten(nn.Module):
-    def forward(self, input, size=256):
-        return input.view(input.size(0), size, 1, 10)
-
-# Define model
-class SegmentationNetwork(nn.Module):
-    def __init__(self, image_channels=3, h_dim=2560, z_dim=8):
-        super(SegmentationNetwork, self).__init__()
-
-        self.encoder = nn.Sequential(
-            nn.Conv2d(image_channels, 32, kernel_size=4, stride=2),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2),
-            nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=4, stride=2),
-            nn.ReLU(),
-            nn.Conv2d(128, 256, kernel_size=4, stride=2),
-            nn.ReLU(),
-            Flatten()
-        )
-
-        self.fc1 = nn.Linear(h_dim, z_dim)
-        self.fc2 = nn.Linear(h_dim, z_dim)
-        self.fc3 = nn.Linear(z_dim, h_dim)
-
-        self.decoder = nn.Sequential(
-            UnFlatten(),
-            nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2),
-            nn.ReLU(),
-            nn.ConvTranspose2d(128, 64, kernel_size=5, stride=2),
-            nn.ReLU(),
-            nn.ConvTranspose2d(64, 32, kernel_size=(8,6), stride=2),
-            nn.ReLU(),
-            nn.ConvTranspose2d(32, 1, kernel_size=6, stride=2),
-            nn.Sigmoid(),
-        )
-
-    def reparameterize(self, mu, logvar):
-        std = logvar.mul(0.5).exp_()
-        # return torch.normal(mu, std)
-        esp = torch.randn(*mu.size())
-        z = mu + std * esp
-        return z
-
-    def bottleneck(self, h):
-        mu, logvar = self.fc1(h), self.fc2(h)
-        z = self.reparameterize(mu, logvar)
-        return z, mu, logvar
-
-
-    def forward(self, x):
-        #print(x.shape) #(14x 3x 200x60)
-        h = self.encoder(x)
-        #print(h.shape) (14x 2560)
-        output, _, _ = self.bottleneck(h)
-        return output
-
-
 
 # --------------------------------------------------------------------------------
 # ------------------ RoboSkate Environment ---------------------------------------
@@ -268,21 +202,21 @@ class RoboSkateNumericalReduced(gym.Env):
 
 
         # x position, y position, checkpoint radius
-        self.checkpoints = np.array([[  30,   0, 5], # 0 - Level 0
-                                     [  55,   0, 5],
-                                     [  72,   0, 5],
-                                     [  97, -10, 5],
-                                     [ 108, -35, 5],
-                                     [ 108, -77, 4],  # 5 - Level 1
-                                     [80.5, -76, 3],
-                                     [80.5, -65, 3],
-                                     [  80, -48, 3],  # 8 - Level 2
-                                     [  72, -38, 3],
-                                     [  64, -45, 3],
-                                     [  60, -55, 3],
-                                     [  49, -53, 3],
-                                     [47.5, -40, 3],
-                                     [47.5, -30, 3]])
+        self.checkpoints = np.array([[    30,      0, 5], # 0 - Level 0
+                                     [    55,      0, 5],
+                                     [    72,      0, 5],
+                                     [    97,    -10, 5],
+                                     [107.69, -35.21, 5],
+                                     [107.69,  -76.5, 4],  # 5 - Level 1
+                                     [    80,  -76.5, 3],
+                                     [    80,    -65, 3],
+                                     [    80,    -48, 3],  # 8 - Level 2
+                                     [    72,    -38, 3],
+                                     [    64,    -45, 3],
+                                     [    60,    -55, 3],
+                                     [    49,    -53, 3],
+                                     [  47.5,    -40, 3],
+                                     [  47.5,    -30, 3]])
 
         if small_checkpoint_radius:
             # set all radius to 1
@@ -318,12 +252,6 @@ class RoboSkateNumericalReduced(gym.Env):
         # state from the game: position, velocity, angle
         self.state = 0
         self.reward = 0
-
-        # Load CNN Model
-        self.model = SegmentationNetwork()
-        self.model.load_state_dict(
-            torch.load("../trained_models/Segmentation/model/model_z_dim_8_early_stop.pth", map_location=torch.device('gpu')))
-        self.model.eval()
 
         # Define action and observation space
         # They must be gym.spaces objects
@@ -416,15 +344,7 @@ class RoboSkateNumericalReduced(gym.Env):
         # get the current state
         self.state = get_info(self.stub)
 
-        if not(self.headlessMode):
-            # render image in Unity
-            image = get_camera(self.stub, self.stepcount).transpose([2, 0, 1])
-            image = image / 255.0
 
-            with torch.no_grad():
-                cnn_latent_space = self.model(torch.from_numpy(np.array([image])).float())
-        else:
-            image = 0
 
         distance_to_next_checkpoint, self.steering_angle, _ = self.checkpoint_follower(self.state.boardPosition[0] * max_board_pos_XY,
                                                              self.state.boardPosition[2] * max_board_pos_XY,
@@ -462,16 +382,6 @@ class RoboSkateNumericalReduced(gym.Env):
         # get the current observations
         self.state = get_info(self.stub)
 
-        if not(self.headlessMode):
-            # render image in Unity
-            image = get_camera(self.stub, self.stepcount).transpose([2, 0, 1])
-            # imageio.imwrite("./RoboSkateR.png", image[0])
-            image = image / 255.0
-
-            with torch.no_grad():
-                cnn_latent_space = self.model(torch.from_numpy(np.array([image])).float())
-        else:
-            image = 0
 
 
 
@@ -526,8 +436,7 @@ class RoboSkateNumericalReduced(gym.Env):
                 "xPos": (self.state.boardPosition[0] * max_board_pos_XY),
                 "yPos": (self.state.boardPosition[2] * max_board_pos_XY),
                 "xOri": (self.state.boardRotation[7]),
-                "yOri": (self.state.boardRotation[9]),
-                "image": image}
+                "yOri": (self.state.boardRotation[9])}
 
         self.stepcount += 1
 

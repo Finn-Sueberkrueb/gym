@@ -268,21 +268,21 @@ class RoboSkateSegmentationReduced(gym.Env):
 
 
         # x position, y position, checkpoint radius
-        self.checkpoints = np.array([[  30,   0, 5], # 0 - Level 0
-                                     [  55,   0, 5],
-                                     [  72,   0, 5],
-                                     [  97, -10, 5],
-                                     [ 108, -35, 5],
-                                     [ 108, -77, 4],  # 5 - Level 1
-                                     [80.5, -76, 3],
-                                     [80.5, -65, 3],
-                                     [  80, -48, 3],  # 8 - Level 2
-                                     [  72, -38, 3],
-                                     [  64, -45, 3],
-                                     [  60, -55, 3],
-                                     [  49, -53, 3],
-                                     [47.5, -40, 3],
-                                     [47.5, -30, 3]])
+        self.checkpoints = np.array([[    30,      0, 5], # 0 - Level 0
+                                     [    55,      0, 5],
+                                     [    72,      0, 5],
+                                     [    97,    -10, 5],
+                                     [107.69, -35.21, 5],
+                                     [107.69,  -76.5, 4],  # 5 - Level 1
+                                     [    80,  -76.5, 3],
+                                     [    80,    -65, 3],
+                                     [    80,    -48, 3],  # 8 - Level 2
+                                     [    72,    -38, 3],
+                                     [    64,    -45, 3],
+                                     [    60,    -55, 3],
+                                     [    49,    -53, 3],
+                                     [  47.5,    -40, 3],
+                                     [  47.5,    -30, 3]])
 
         if small_checkpoint_radius:
             # set all radius to 1
@@ -322,7 +322,7 @@ class RoboSkateSegmentationReduced(gym.Env):
         # Load CNN Model
         self.model = SegmentationNetwork()
         self.model.load_state_dict(
-            torch.load("../trained_models/Segmentation/model/model_z_dim_8_early_stop.pth", map_location=torch.device('cuda')))
+            torch.load("../trained_models/Segmentation/model/model_z_dim_8_early_stop.pth", map_location=torch.device('cpu')))
         self.model.eval()
 
         # Define action and observation space

@@ -9,6 +9,12 @@ register(
 )
 
 register(
+    id='RoboSkateNumerical10Obs-v0',
+    entry_point='gym.envs.RoboSkate:RoboSkateNumerical10Obs',
+    max_episode_steps=1000,
+)
+
+register(
     id='RoboSkateNumericalReduced-v0',
     entry_point='gym.envs.RoboSkate:RoboSkateNumericalReduced',
     max_episode_steps=1000,

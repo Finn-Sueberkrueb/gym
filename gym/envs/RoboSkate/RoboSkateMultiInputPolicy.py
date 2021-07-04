@@ -206,8 +206,8 @@ class RoboSkateMultiInputPolicy(gym.Env):
                                      [  55,   0, 5],
                                      [  72,   0, 5],
                                      [  97, -10, 5],
-                                     [ 108, -35, 5],
-                                     [ 108, -77, 4],  # 5 - Level 1
+                                     [ 107.69, -35.21, 5],
+                                     [ 107.69, -77, 4],  # 5 - Level 1
                                      [80.5, -76, 3],
                                      [80.5, -65, 3],
                                      [  80, -48, 3],  # 8 - Level 2
@@ -469,7 +469,7 @@ class RoboSkateMultiInputPolicy(gym.Env):
                                      self.state.boardRotation[9],
                                      self.state.boardRotation[10],
                                      self.state.boardRotation[11],
-                                     self.state.boardRotation[12]]).astype(np.float32)}, self.reward/10.0, done, info
+                                     self.state.boardRotation[12]]).astype(np.float32)}, self.reward, done, info
 
     def render(self, mode='human'):
         # render is not in use since Unity game.
