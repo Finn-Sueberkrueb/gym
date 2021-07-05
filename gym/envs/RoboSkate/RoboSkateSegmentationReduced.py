@@ -22,7 +22,7 @@ import socket
 import imageio
 import torch
 from torch import nn
-from torchvision.io import read_image
+import cv2
 
 
 # Value Range for observations abs(-Min) = Max
@@ -219,6 +219,14 @@ class SegmentationNetwork(nn.Module):
         output, _, _ = self.bottleneck(h)
         return output
 
+    def decode_from_z(self, z):
+        #print(z)
+        z = self.fc3(z)
+        #print(z.shape) #(14x 2560)
+        output = self.decoder(z)
+        #print(output.shape)  # (14x 3x 200x 60)
+        return output
+
 
 
 # --------------------------------------------------------------------------------
@@ -250,7 +258,8 @@ class RoboSkateSegmentationReduced(gym.Env):
                  startLevel=0,
                  random_start_level=False,
                  cameraWidth=200,
-                 cameraHeight=60):
+                 cameraHeight=60,
+                 show_image_reconstruction=True):
 
         super(RoboSkateSegmentationReduced, self).__init__()
 
@@ -265,6 +274,7 @@ class RoboSkateSegmentationReduced(gym.Env):
         self.cameraHeight = cameraHeight
         self.old_steering_angle = 0
         self.old_distance_to_next_checkpoint = 0
+        self.show_image_reconstruction = show_image_reconstruction
 
 
         # x position, y position, checkpoint radius
@@ -474,6 +484,14 @@ class RoboSkateSegmentationReduced(gym.Env):
                 cnn_latent_space = self.model(torch.from_numpy(np.array([image])).float())
         else:
             image = 0
+
+        if self.show_image_reconstruction:
+            state = cnn_latent_space.detach().numpy()[0]
+            reconstructed_image = self.model.decode_from_z(torch.tensor([state])).detach().numpy()[0].transpose([1, 2, 0])
+            cv2.imshow("reconstructed image", reconstructed_image)
+            k = cv2.waitKey(1) & 0xFF
+            if k == 27:
+                pass
 
 
 

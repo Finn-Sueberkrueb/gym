@@ -457,6 +457,8 @@ class RoboSkateNumericalReduced(gym.Env):
                                            self.state.boardRotation[12],
                                            self.steering_angle]).astype(np.float32)
 
+        print(numerical_observations)
+
         return numerical_observations, self.reward, done, info
 
 

@@ -447,6 +447,9 @@ class RoboSkateNumerical(gym.Env):
         # self.rewardsum += self.reward
         # print(("%3.2f\t %3.2f" % (self.rewardsum, self.reward)).replace(".",","))
 
+
+
+
         return np.array([self.state.boardCraneJointAngles[0],
                          self.state.boardCraneJointAngles[1],
                          self.state.boardCraneJointAngles[2],
