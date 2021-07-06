@@ -22,13 +22,13 @@ import socket
 
 
 # Value Range for observations abs(-Min) = Max
-max_Joint_force = 300.0
+max_Joint_force = 250.0
 
 max_Joint_pos_1 = 185
 max_Joint_pos_2 = 95.0
 max_Joint_pos_3 = 130.0
 
-max_Joint_vel = 200.0
+max_Joint_vel = 170.0
 
 max_board_pos_XY = 220.0
 max_board_pos_Z = 50.0
@@ -193,13 +193,14 @@ class RoboSkateNumerical10Obs(gym.Env):
                  max_episode_length=2000,
                  startport=50051,
                  rank=-1,
-                 small_checkpoint_radius=True,
+                 small_checkpoint_radius=False,
                  headlessMode=True,
                  AutostartRoboSkate=True,
                  startLevel=0,
                  random_start_level=False,
                  cameraWidth=200,
-                 cameraHeight=60):
+                 cameraHeight=60,
+                 show_image_reconstruction=False):
 
         super(RoboSkateNumerical10Obs, self).__init__()
 
@@ -217,21 +218,38 @@ class RoboSkateNumerical10Obs(gym.Env):
 
 
         # x position, y position, checkpoint radius
-        self.checkpoints = np.array([[    30,      0, 5], # 0 - Level 0
-                                     [    55,      0, 5],
-                                     [    72,      0, 5],
-                                     [    97,    -10, 5],
-                                     [107.69, -35.21, 5],
-                                     [107.69,  -76.5, 4],  # 5 - Level 1
-                                     [    80,  -76.5, 3],
-                                     [    80,    -65, 3],
-                                     [    80,    -48, 3],  # 8 - Level 2
-                                     [    72,    -38, 3],
-                                     [    64,    -45, 3],
-                                     [    60,    -55, 3],
-                                     [    49,    -53, 3],
-                                     [  47.5,    -40, 3],
-                                     [  47.5,    -30, 3]])
+        self.checkpoints = np.array([[    30,      0, 5.0], # U      # 0 Start Level 0
+                                     [    55,      0, 5.0], # V
+                                     [  72.5,      0, 5.0], # C_0
+                                     [    87,     -3, 5.0], # S
+                                     [  98.5,    -12, 5.0], # W
+                                     [   105,  -22.4, 5.0], # T
+                                     [107.69, -35.21, 5.0], # C_2
+                                     [107.69,    -50, 2.0], # A     # 7 Start Level 1
+                                     [107.69,    -57, 1.5], # C
+                                     [107.69,    -65, 1.5], # D
+                                     [107.69,    -73, 2.0], # E
+                                     [   101,  -77.4, 1.5], # G
+                                     [    95,  -77.4, 1.5], # F
+                                     [    89,  -77.4, 1.5], # I
+                                     [  82.2,  -77.4, 1.5], # C_4
+                                     [    80,    -75, 1.5], # J
+                                     [    80,    -70, 1.5], # K
+                                     [    80,    -65, 1.5], # C_5
+                                     [    80,    -58, 1.5], # L
+                                     [    80,    -50, 3.0], # C_6     # 19 Start Level 2
+                                     [    79,    -44, 3.0], # M
+                                     [  76.5,    -40, 3.0], # N
+                                     [    71,    -39, 3.0], # C_7
+                                     [    67,  -40.6, 3.0], # O
+                                     [    64,    -45, 3.0], # C_8
+                                     [  62.8,  -50.4, 3.0], # P
+                                     [  59.8,  -54.7, 3.0], # C_9
+                                     [    54,    -56, 3.0], # Q
+                                     [  49.5,    -53, 3.0], # C_10
+                                     [  47.9,    -47, 3.0], # R
+                                     [  47.5,    -40, 2], # C_11
+                                     [  47.5,    -30, 1]]) # C_12
 
         if small_checkpoint_radius:
             # set all radius to 1
@@ -239,8 +257,8 @@ class RoboSkateNumerical10Obs(gym.Env):
 
 
         self.start_checkpoint_for_level = {0: 0,
-                                           1: 5,
-                                           2: 8}
+                                           1: 7,
+                                           2: 19}
 
         # gRPC channel
         address = 'localhost:' + str(self.Port)
@@ -438,7 +456,9 @@ class RoboSkateNumerical10Obs(gym.Env):
             done = True
 
         # additional information that will be shared
-        info = {"step": self.stepcount}
+        info = {"step": self.stepcount,
+                "board_pitch": board_pitch,
+                "steering_angle": self.steering_angle}
 
         self.stepcount += 1
 
