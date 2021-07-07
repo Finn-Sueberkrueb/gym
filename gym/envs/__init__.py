@@ -9,32 +9,8 @@ register(
 )
 
 register(
-    id='RoboSkateNumerical10Obs-v0',
-    entry_point='gym.envs.RoboSkate:RoboSkateNumerical10Obs',
-    max_episode_steps=1000,
-)
-
-register(
-    id='RoboSkateSegmentation10Obs-v0',
-    entry_point='gym.envs.RoboSkate:RoboSkateSegmentation10Obs',
-    max_episode_steps=1000,
-)
-
-register(
-    id='RoboSkateNumericalReduced-v0',
-    entry_point='gym.envs.RoboSkate:RoboSkateNumericalReduced',
-    max_episode_steps=1000,
-)
-
-register(
-    id='RoboSkateMultiInputPolicyReduced-v0',
-    entry_point='gym.envs.RoboSkate:RoboSkateMultiInputPolicyReduced',
-    max_episode_steps=1000,
-)
-
-register(
-    id='RoboSkateSegmentationReduced-v0',
-    entry_point='gym.envs.RoboSkate:RoboSkateSegmentationReduced',
+    id='RoboSkateSegmentation-v0',
+    entry_point='gym.envs.RoboSkate:RoboSkateSegmentation',
     max_episode_steps=1000,
 )
 
@@ -44,11 +20,7 @@ register(
     max_episode_steps=1000,
 )
 
-register(
-    id='RoboSkateSegmentation-v0',
-    entry_point='gym.envs.RoboSkate:RoboSkateSegmentation',
-    max_episode_steps=1000,
-)
+
 
 
 register(

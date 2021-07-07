@@ -8,7 +8,6 @@ position should be corrected relative to the current position.
 import numpy as np
 import gym
 from gym import spaces
-import threading
 import os
 from sys import platform
 import math
@@ -19,25 +18,22 @@ from gym.envs.RoboSkate.grpcClient.service_pb2 import InitializeRequest, NoParam
 import io
 from PIL import Image
 import socket
-import imageio
-import torch
-from torch import nn
-from torchvision.io import read_image
+
 
 
 # Value Range for observations abs(-Min) = Max
-max_Joint_force = 300.0
+max_Joint_force = 250.0
 
-max_Joint_pos_1 = 180
-max_Joint_pos_2 = 90.0
-max_Joint_pos_3 = 125.0
+max_Joint_pos_1 = 185
+max_Joint_pos_2 = 95.0
+max_Joint_pos_3 = 130.0
 
 max_Joint_vel = 170.0
 
 max_board_pos_XY = 220.0
 max_board_pos_Z = 50.0
-max_board_vel_XY = 10.0
-max_board_vel_Z = 10.0
+max_board_vel_XY = 8.0
+max_board_vel_Z = 8.0
 
 
 # --------------------------------------------------------------------------------
@@ -100,7 +96,26 @@ def get_info(stub):
         reply.boardRotation[11] /= 1  # In the Boll is flat on the ground this is 1 (yaw dose not change this value)
         reply.boardRotation[12] /= 1
 
-        return reply
+
+        # use coordinate frame as defined in RoboSkate_API.md
+        # Sorry for all the different coordinate systems system
+        # Calculate ortogonal vector to the side
+        forward_vec = np.array([reply.boardRotation[7],reply.boardRotation[8],reply.boardRotation[9]])
+        up_vec = np.array([reply.boardRotation[10],reply.boardRotation[11],reply.boardRotation[12]])
+        left_vec = np.cross(forward_vec,up_vec)
+
+        # euler angles
+        board_yaw = np.arctan2(reply.boardRotation[9], reply.boardRotation[7]) / math.pi
+        board_pitch = np.arctan2(np.linalg.norm(np.array([reply.boardRotation[7],reply.boardRotation[9]])), reply.boardRotation[8]) / math.pi
+        board_roll = np.arctan2(np.linalg.norm(np.array([left_vec[0], left_vec[2]])), left_vec[1]) / math.pi
+
+
+        # forward Velocity. Not really accurate since only the direction +- is used for the velocity. Sidways would also be a valid velocity here.
+        velocity_vec = np.array([reply.boardPosition[3], reply.boardPosition[5]])
+        yaw_vec = np.array([reply.boardRotation[7], reply.boardRotation[9]])
+        board_forward_velocity = np.linalg.norm(np.array([reply.boardPosition[3], reply.boardPosition[5]])) * np.sign(np.dot(yaw_vec,velocity_vec))
+
+        return reply, board_yaw, board_roll, board_pitch, board_forward_velocity
     else:
         print("GetInfo gRPC failure")
 
@@ -136,22 +151,22 @@ def startRoboSkate(port, graphics_environment):
     if graphics_environment:
         # choose Platform and run with graphics
         if platform == "darwin":
-            var = os.system("nohup ../games/RoboSkate3.app/Contents/MacOS/RoboSkate -screen-height 200 -screen-width 300 -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
+            os.system("nohup ../games/RoboSkate3.app/Contents/MacOS/RoboSkate -screen-height 200 -screen-width 300 -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
         elif platform == "linux" or platform == "linux2":
-            var = os.system("nohup ../games/RoboSkate3/roboskate.x86_64 -screen-height 200 -screen-width 300 -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
+            os.system("nohup ../games/RoboSkate3/roboskate.x86_64 -screen-height 200 -screen-width 300 -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
         elif platform == "win32":
             # TODO: Running RoboSkate on windows in the background has not been tested yet!
-            var = os.system("nohup ../games/RoboSkate3/RoboSkate.exe -screen-height 200 -screen-width 300 -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
+            pass
 
     else:
         # choose Platform and run in batchmode
         if platform == "darwin":
-            var = os.system("nohup ../games/RoboSkate3.app/Contents/MacOS/RoboSkate -nographics -batchmode -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
+            os.system("nohup ../games/RoboSkate3.app/Contents/MacOS/RoboSkate -nographics -batchmode -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
         elif platform == "linux" or platform == "linux2":
-            var = os.system("nohup ../games/RoboSkate3/roboskate.x86_64 -nographics -batchmode  -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
+            os.system("nohup ../games/RoboSkate3/roboskate.x86_64 -nographics -batchmode  -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
         elif platform == "win32":
             # TODO: Running RoboSkate on windows in the background has not been tested yet!
-            var = os.system("nohup ../games/RoboSkate3/RoboSkate.exe -nographics -batchmode  -p " + str(port) + " > RoboSkate" + str(port) + ".log &")
+            pass
 
 
 
@@ -175,10 +190,10 @@ class RoboSkateNumerical(gym.Env):
             return True
 
     def __init__(self,
-                 max_episode_length=1000,
+                 max_episode_length=2000,
                  startport=50051,
                  rank=-1,
-                 small_checkpoint_radius=True,
+                 small_checkpoint_radius=False,
                  headlessMode=True,
                  AutostartRoboSkate=True,
                  startLevel=0,
@@ -202,21 +217,38 @@ class RoboSkateNumerical(gym.Env):
 
 
         # x position, y position, checkpoint radius
-        self.checkpoints = np.array([[    30,      0, 5], # 0 - Level 0
-                                     [    55,      0, 5],
-                                     [    72,      0, 5],
-                                     [    97,    -10, 5],
-                                     [107.69, -35.21, 5],
-                                     [107.69,  -76.5, 4],  # 5 - Level 1
-                                     [    80,  -76.5, 3],
-                                     [    80,    -65, 3],
-                                     [    80,    -48, 3],  # 8 - Level 2
-                                     [    72,    -38, 3],
-                                     [    64,    -45, 3],
-                                     [    60,    -55, 3],
-                                     [    49,    -53, 3],
-                                     [  47.5,    -40, 3],
-                                     [  47.5,    -30, 3]])
+        self.checkpoints = np.array([[    30,      0, 5.0], # U      # 0 Start Level 0
+                                     [    55,      0, 5.0], # V
+                                     [  72.5,      0, 5.0], # C_0
+                                     [    87,     -3, 5.0], # S
+                                     [  98.5,    -12, 5.0], # W
+                                     [   105,  -22.4, 5.0], # T
+                                     [107.69, -35.21, 5.0], # C_2
+                                     [107.69,    -50, 2.0], # A     # 7 Start Level 1
+                                     [107.69,    -57, 1.5], # C
+                                     [107.69,    -65, 1.5], # D
+                                     [107.69,    -73, 2.0], # E
+                                     [   101,  -77.4, 1.5], # G
+                                     [    95,  -77.4, 1.5], # F
+                                     [    89,  -77.4, 1.5], # I
+                                     [  82.2,  -77.4, 1.5], # C_4
+                                     [    80,    -75, 1.5], # J
+                                     [    80,    -70, 1.5], # K
+                                     [    80,    -65, 1.5], # C_5
+                                     [    80,    -58, 1.5], # L
+                                     [    80,    -50, 3.0], # C_6     # 19 Start Level 2
+                                     [    79,    -44, 3.0], # M
+                                     [  76.5,    -40, 3.0], # N
+                                     [    71,    -39, 3.0], # C_7
+                                     [    67,  -40.6, 3.0], # O
+                                     [    64,    -45, 3.0], # C_8
+                                     [  62.8,  -50.4, 3.0], # P
+                                     [  59.8,  -54.7, 3.0], # C_9
+                                     [    54,    -56, 3.0], # Q
+                                     [  49.5,    -53, 3.0], # C_10
+                                     [  47.9,    -47, 3.0], # R
+                                     [  47.5,    -40, 2], # C_11
+                                     [  47.5,    -30, 1]]) # C_12
 
         if small_checkpoint_radius:
             # set all radius to 1
@@ -224,8 +256,8 @@ class RoboSkateNumerical(gym.Env):
 
 
         self.start_checkpoint_for_level = {0: 0,
-                                           1: 5,
-                                           2: 8}
+                                           1: 7,
+                                           2: 19}
 
         # gRPC channel
         address = 'localhost:' + str(self.Port)
@@ -261,28 +293,24 @@ class RoboSkateNumerical(gym.Env):
                                        high=1,
                                        shape=(3,),
                                        dtype=np.float32)
-
         self.observation_space = spaces.Box(low=-1,
-                                            high=1,
-                                            shape=(15,),
-                                            dtype=np.float32)
+                                        high=1,
+                                        shape=(10,),
+                                        dtype=np.float32)
 
     # ------------------------------------------------------------------------------------------------------------------
     # Calculation of Steering Angle based on checkpoints
 
-    def checkpoint_follower(self, x_pos, y_pos, x_orientation, y_oriantation):
+    def checkpoint_follower(self, x_pos, y_pos, board_yaw):
         checkpoint_reached = False
 
         # get current position and orientation
         position = np.array([x_pos, y_pos])
-        orientation = np.array([x_orientation, y_oriantation])
-        # Normalize orientation
-        orientation = orientation / np.linalg.norm(orientation)
 
         # calculate distance to next checkpoint
         distance_to_next_checkpoint = self.checkpoints[self.next_checkpoint][:2] - position
 
-        if (np.linalg.norm([distance_to_next_checkpoint]) <= self.checkpoints[self.next_checkpoint][2]):
+        if np.linalg.norm([distance_to_next_checkpoint]) <= self.checkpoints[self.next_checkpoint][2]:
             # closer to checkpoint than checkpoint radius
             self.next_checkpoint += 1
             checkpoint_reached = True
@@ -291,11 +319,12 @@ class RoboSkateNumerical(gym.Env):
 
         # calculate angle towards next checkpoint
         direction_to_next_checkpoint = np.arctan2(distance_to_next_checkpoint[1],
-                                                  distance_to_next_checkpoint[0]) * 180 / math.pi
+                                                  distance_to_next_checkpoint[0]) * 180.0 / math.pi
+
+        # Board orientation / YAW in [-1,1]
+        current_orientation = board_yaw * 180.0
 
         # Calculate rotation error
-        current_orientation = np.arctan2(orientation[1], orientation[0]) * 180 / math.pi
-
         if abs(current_orientation - direction_to_next_checkpoint) > 180:
             # case where we go over the +-180°
             rotation_error = -(360 - abs(current_orientation - direction_to_next_checkpoint)) * np.sign(
@@ -311,7 +340,7 @@ class RoboSkateNumerical(gym.Env):
     def setstartposition(self):
         for i in range(5):
 
-            self.state = get_info(self.stub)
+            self.state, _, _, _, _ = get_info(self.stub)
             joint2 = (55 - self.state.boardCraneJointAngles[1]*max_Joint_pos_2)
             joint3 = (110 - self.state.boardCraneJointAngles[2]*max_Joint_pos_3)
             set_info(self.stub, 0, joint2/20, joint3/10)
@@ -342,31 +371,29 @@ class RoboSkateNumerical(gym.Env):
         self.stepcount = 0
 
         # get the current state
-        self.state = get_info(self.stub)
+        self.state, board_yaw, board_roll, board_pitch, board_forward_velocity = get_info(self.stub)
+
+
 
         distance_to_next_checkpoint, self.steering_angle, _ = self.checkpoint_follower(self.state.boardPosition[0] * max_board_pos_XY,
-                                                             self.state.boardPosition[2] * max_board_pos_XY,
-                                                             self.state.boardRotation[7],
-                                                             self.state.boardRotation[9])
+                                                                                       self.state.boardPosition[2] * max_board_pos_XY,
+                                                                                       board_yaw)
 
         self.old_steering_angle = self.steering_angle
         self.old_distance_to_next_checkpoint = distance_to_next_checkpoint
 
-        return np.array([self.state.boardCraneJointAngles[0],
-                         self.state.boardCraneJointAngles[1],
-                         self.state.boardCraneJointAngles[2],
-                         self.state.boardCraneJointAngles[3],
-                         self.state.boardCraneJointAngles[4],
-                         self.state.boardCraneJointAngles[5],
-                         self.state.boardPosition[3],
-                         self.state.boardPosition[5],
-                         self.state.boardRotation[7],
-                         self.state.boardRotation[8],
-                         self.state.boardRotation[9],
-                         self.state.boardRotation[10],
-                         self.state.boardRotation[11],
-                         self.state.boardRotation[12],
-                         self.steering_angle]).astype(np.float32)
+        numerical_observations = np.array([ self.state.boardCraneJointAngles[0],
+                                            self.state.boardCraneJointAngles[1],
+                                            self.state.boardCraneJointAngles[2],
+                                            self.state.boardCraneJointAngles[3],
+                                            self.state.boardCraneJointAngles[4],
+                                            self.state.boardCraneJointAngles[5],
+                                            board_forward_velocity,
+                                            board_pitch,
+                                            board_roll,
+                                            self.steering_angle/180.0]).astype(np.float32)
+
+        return numerical_observations
 
 
 
@@ -379,22 +406,14 @@ class RoboSkateNumerical(gym.Env):
         run_game(self.stub, 0.2)
 
         # get the current observations
-        self.state = get_info(self.stub)
-
-        if not(self.headlessMode):
-            # render image in Unity
-            image = get_camera(self.stub, self.stepcount).transpose([2, 0, 1])
-        else:
-            image = 0
-
+        self.state, board_yaw, board_roll, board_pitch, board_forward_velocity = get_info(self.stub)
 
 
         distance_to_next_checkpoint, \
         self.steering_angle, \
         checkpoint_reached = self.checkpoint_follower(self.state.boardPosition[0] * max_board_pos_XY,
                                                       self.state.boardPosition[2] * max_board_pos_XY,
-                                                      self.state.boardRotation[7],
-                                                      self.state.boardRotation[9])
+                                                      board_yaw)
 
         if checkpoint_reached:
             # Do not use distance to next checkpoint at checkpoint since it jumps to next checkpoints distance
@@ -403,7 +422,6 @@ class RoboSkateNumerical(gym.Env):
             driving_reward = self.old_distance_to_next_checkpoint - distance_to_next_checkpoint
             steering_reward = abs(self.old_steering_angle) - abs(self.steering_angle)
             self.reward = driving_reward*5 + steering_reward*1
-
 
         self.old_steering_angle = self.steering_angle
         self.old_distance_to_next_checkpoint = distance_to_next_checkpoint
@@ -423,48 +441,36 @@ class RoboSkateNumerical(gym.Env):
             self.reward -= 15
             print("fallen from path")
             done = True
-        elif abs(self.state.boardRotation[11]) < 0.30:
+        elif abs(board_roll-0.5) > 0.35:
             # Stop if board is tipped
             self.reward -= 10
             print("board tipped")
             done = True
-        elif abs(self.state.boardCraneJointAngles[3] * max_Joint_vel) > 150:
+        elif abs(self.state.boardCraneJointAngles[3] * max_Joint_vel) > 200:
             # Stop if turning the first joint to fast "Helicopter"
             self.reward -= 10
             print("Helicopter")
             done = True
 
-
         # additional information that will be shared
         info = {"step": self.stepcount,
-                "xPos": (self.state.boardPosition[0] * max_board_pos_XY),
-                "yPos": (self.state.boardPosition[2] * max_board_pos_XY),
-                "image": image}
+                "board_pitch": board_pitch,
+                "steering_angle": self.steering_angle}
 
         self.stepcount += 1
 
-        # Output reward in Excel copy and paste appropriate format.
-        # self.rewardsum += self.reward
-        # print(("%3.2f\t %3.2f" % (self.rewardsum, self.reward)).replace(".",","))
+        numerical_observations = np.array([self.state.boardCraneJointAngles[0],
+                                           self.state.boardCraneJointAngles[1],
+                                           self.state.boardCraneJointAngles[2],
+                                           self.state.boardCraneJointAngles[3],
+                                           self.state.boardCraneJointAngles[4],
+                                           self.state.boardCraneJointAngles[5],
+                                           board_forward_velocity,
+                                           board_pitch,
+                                           board_roll,
+                                           self.steering_angle/180.0]).astype(np.float32)
 
-
-
-
-        return np.array([self.state.boardCraneJointAngles[0],
-                         self.state.boardCraneJointAngles[1],
-                         self.state.boardCraneJointAngles[2],
-                         self.state.boardCraneJointAngles[3],
-                         self.state.boardCraneJointAngles[4],
-                         self.state.boardCraneJointAngles[5],
-                         self.state.boardPosition[3],
-                         self.state.boardPosition[5],
-                         self.state.boardRotation[7],
-                         self.state.boardRotation[8],
-                         self.state.boardRotation[9],
-                         self.state.boardRotation[10],
-                         self.state.boardRotation[11],
-                         self.state.boardRotation[12],
-                         self.steering_angle]).astype(np.float32), self.reward, done, info
+        return numerical_observations, self.reward, done, info
 
 
     def render(self, mode='human'):
