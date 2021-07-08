@@ -37,6 +37,7 @@ max_board_pos_Z = 50.0
 max_board_vel_XY = 8.0
 max_board_vel_Z = 8.0
 
+z_dim = 2
 
 # --------------------------------------------------------------------------------
 # ------------------ gRPC functions ----------------------------------------------
@@ -185,7 +186,7 @@ class UnFlatten(nn.Module):
 
 # Define model
 class SegmentationNetwork(nn.Module):
-    def __init__(self, image_channels=3, h_dim=2560, z_dim=8):
+    def __init__(self, image_channels=3, h_dim=2560, z_dim=z_dim):
         super(SegmentationNetwork, self).__init__()
 
         self.encoder = nn.Sequential(
@@ -367,7 +368,7 @@ class RoboSkateSegmentation(gym.Env):
         self.model = SegmentationNetwork()
         device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model.load_state_dict(
-            torch.load("../trained_models/Segmentation/model/model_z_dim_8_early_stop.pth", map_location=torch.device(device)))
+            torch.load("../trained_models/Segmentation/model/model_z_dim_" + str(z_dim) +".pth", map_location=torch.device(device)))
         self.model.eval()
 
         # Define action and observation space
@@ -380,7 +381,7 @@ class RoboSkateSegmentation(gym.Env):
                                        dtype=np.float32)
         self.observation_space = spaces.Box(low=-1,
                                             high=1,
-                                            shape=(9+8,),
+                                            shape=(9+z_dim,),
                                             dtype=np.float32)
 
     # ------------------------------------------------------------------------------------------------------------------
