@@ -373,7 +373,12 @@ class RoboSkateNumerical(gym.Env):
         # get the current state
         self.state, board_yaw, board_roll, board_pitch, board_forward_velocity = get_info(self.stub)
 
+        if not(self.headlessMode):
+            # render image in Unity
+            image = get_camera(self.stub, self.stepcount).transpose([2, 0, 1])
 
+        else:
+            image = 0
 
         distance_to_next_checkpoint, self.steering_angle, _ = self.checkpoint_follower(self.state.boardPosition[0] * max_board_pos_XY,
                                                                                        self.state.boardPosition[2] * max_board_pos_XY,
@@ -407,6 +412,15 @@ class RoboSkateNumerical(gym.Env):
 
         # get the current observations
         self.state, board_yaw, board_roll, board_pitch, board_forward_velocity = get_info(self.stub)
+
+        if not(self.headlessMode):
+            # render image in Unity
+            image = get_camera(self.stub, self.stepcount).transpose([2, 0, 1])
+
+        else:
+            image = 0
+
+
 
 
         distance_to_next_checkpoint, \
@@ -455,7 +469,8 @@ class RoboSkateNumerical(gym.Env):
         # additional information that will be shared
         info = {"step": self.stepcount,
                 "board_pitch": board_pitch,
-                "steering_angle": self.steering_angle}
+                "steering_angle": self.steering_angle,
+                "image": image}
 
         self.stepcount += 1
 
