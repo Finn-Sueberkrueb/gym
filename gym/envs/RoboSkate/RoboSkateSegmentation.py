@@ -24,6 +24,15 @@ import cv2
 import torchvision.transforms as T
 
 
+old_segmentation = False
+
+if old_segmentation:
+    camera_width = 200
+    camera_height = 60
+else:
+    camera_width = 1000
+    camera_height = 300
+
 # Value Range for observations abs(-Min) = Max
 max_Joint_force = 250.0
 
@@ -276,8 +285,8 @@ class RoboSkateSegmentation(gym.Env):
                  AutostartRoboSkate=True,
                  startLevel=0,
                  random_start_level=False,
-                 cameraWidth=1000,
-                 cameraHeight=300,
+                 cameraWidth=camera_width,
+                 cameraHeight=camera_height,
                  show_image_reconstruction=False):
 
         super(RoboSkateSegmentation, self).__init__()
@@ -368,7 +377,12 @@ class RoboSkateSegmentation(gym.Env):
         # Load CNN Model
         self.model = SegmentationNetwork()
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model.load_state_dict(
+        if old_segmentation:
+            self.model.load_state_dict(
+                torch.load("../trained_models/Segmentation/model/model_z_dim_" + str(z_dim) + "_old.pth",
+                           map_location=torch.device(device)))
+        else:
+            self.model.load_state_dict(
             torch.load("../trained_models/Segmentation/model/model_z_dim_" + str(z_dim) +".pth", map_location=torch.device(device)))
         self.model.eval()
 
@@ -493,7 +507,8 @@ class RoboSkateSegmentation(gym.Env):
                                             board_roll]).astype(np.float32)
 
         # TODO: how to avoid the tensor transformations?
-        np_cnn_latent_space = cnn_latent_space.cpu().detach().numpy()[0]
+        #np_cnn_latent_space = cnn_latent_space.cpu().detach().numpy()[0]
+        np_cnn_latent_space = cnn_latent_space.detach().numpy()[0]
         return np.concatenate((numerical_observations, np_cnn_latent_space), axis=0)
 
 
@@ -595,7 +610,8 @@ class RoboSkateSegmentation(gym.Env):
                                            board_roll]).astype(np.float32)
 
         # TODO: how to avoid the tensor transformations?
-        np_cnn_latent_space = cnn_latent_space.cpu().detach().numpy()[0]
+        #np_cnn_latent_space = cnn_latent_space.cpu().detach().numpy()[0]
+        np_cnn_latent_space = cnn_latent_space.detach().numpy()[0]
         return np.concatenate((numerical_observations, np_cnn_latent_space), axis=0), self.reward, done, info
 
     def render(self, mode='human'):
