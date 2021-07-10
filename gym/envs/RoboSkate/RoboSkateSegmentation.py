@@ -21,6 +21,7 @@ import socket
 import torch
 from torch import nn
 import cv2
+import torchvision.transforms as T
 
 
 # Value Range for observations abs(-Min) = Max
@@ -275,8 +276,8 @@ class RoboSkateSegmentation(gym.Env):
                  AutostartRoboSkate=True,
                  startLevel=0,
                  random_start_level=False,
-                 cameraWidth=200,
-                 cameraHeight=60,
+                 cameraWidth=1000,
+                 cameraHeight=300,
                  show_image_reconstruction=False):
 
         super(RoboSkateSegmentation, self).__init__()
@@ -461,7 +462,12 @@ class RoboSkateSegmentation(gym.Env):
 
         if not(self.headlessMode):
             # render image in Unity
-            image = get_camera(self.stub, self.stepcount).transpose([2, 0, 1])
+            image = get_camera(self.stub, self.stepcount)
+            #print(image.shape)
+            #print("test")
+            image = cv2.resize(image, (200, 60))
+            #print(image.shape)
+            image = image.transpose([2, 0, 1])
             image = image / 255.0
 
             with torch.no_grad():
@@ -505,7 +511,9 @@ class RoboSkateSegmentation(gym.Env):
 
         if not(self.headlessMode):
             # render image in Unity
-            image = get_camera(self.stub, self.stepcount).transpose([2, 0, 1])
+            imagebig = get_camera(self.stub, self.stepcount)
+            image = cv2.resize(imagebig, (200, 60))
+            image = image.transpose([2, 0, 1])
             # imageio.imwrite("./RoboSkateR.png", image[0])
             image = image / 255.0
 
@@ -518,6 +526,8 @@ class RoboSkateSegmentation(gym.Env):
             state = cnn_latent_space.detach().numpy()[0]
             reconstructed_image = self.model.decode_from_z(torch.tensor([state])).detach().numpy()[0].transpose([1, 2, 0])
             cv2.imshow("reconstructed image", reconstructed_image)
+            #cv2.imshow("original image", image.transpose([1, 2, 0]))
+            cv2.imshow("original image", imagebig)
             k = cv2.waitKey(1) & 0xFF
             if k == 27:
                 pass

@@ -21,8 +21,15 @@ import socket
 
 
 
+agent_without_limits = False
+
 # Value Range for observations abs(-Min) = Max
-max_Joint_force = 250.0
+if agent_without_limits:
+    max_Joint_force = 10000.0
+    unity_sim_time = 0.05
+else:
+    max_Joint_force = 250.0
+    unity_sim_time = 0.2
 
 max_Joint_pos_1 = 185
 max_Joint_pos_2 = 95.0
@@ -344,7 +351,7 @@ class RoboSkateNumerical(gym.Env):
             joint2 = (55 - self.state.boardCraneJointAngles[1]*max_Joint_pos_2)
             joint3 = (110 - self.state.boardCraneJointAngles[2]*max_Joint_pos_3)
             set_info(self.stub, 0, joint2/20, joint3/10)
-            run_game(self.stub, 0.2)
+            run_game(self.stub, unity_sim_time)
 
         set_info(self.stub, 0,0,0)
 
@@ -364,8 +371,9 @@ class RoboSkateNumerical(gym.Env):
         # Reset environoment
         initialize(self.stub, str(self.startLevel) + "," + str(self.cameraWidth) + "," + str(self.cameraHeight))
 
-        # set a predefined starting position to assist learning
-        self.setstartposition()
+        if not agent_without_limits:
+            # set a predefined starting position to assist learning
+            self.setstartposition()
 
         self.start = time.time()
         self.stepcount = 0
@@ -408,7 +416,7 @@ class RoboSkateNumerical(gym.Env):
         set_info(self.stub, action[0], action[1], action[2])
 
         # Run RoboSkate Game for time 0.2s
-        run_game(self.stub, 0.2)
+        run_game(self.stub, unity_sim_time)
 
         # get the current observations
         self.state, board_yaw, board_roll, board_pitch, board_forward_velocity = get_info(self.stub)
@@ -457,14 +465,16 @@ class RoboSkateNumerical(gym.Env):
             done = True
         elif abs(board_roll-0.5) > 0.35:
             # Stop if board is tipped
-            self.reward -= 10
-            print("board tipped")
-            done = True
+            if not agent_without_limits:
+                self.reward -= 10
+                print("board tipped")
+                done = True
         elif abs(self.state.boardCraneJointAngles[3] * max_Joint_vel) > 200:
             # Stop if turning the first joint to fast "Helicopter"
-            self.reward -= 10
-            print("Helicopter")
-            done = True
+            if not agent_without_limits:
+                self.reward -= 10
+                print("Helicopter")
+                done = True
 
         # additional information that will be shared
         info = {"step": self.stepcount,
