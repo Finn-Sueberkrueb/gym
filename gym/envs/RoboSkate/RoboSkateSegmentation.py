@@ -21,7 +21,6 @@ import socket
 import torch
 from torch import nn
 import cv2
-import torchvision.transforms as T
 
 
 old_segmentation = False
@@ -541,8 +540,13 @@ class RoboSkateSegmentation(gym.Env):
             state = cnn_latent_space.detach().numpy()[0]
             reconstructed_image = self.model.decode_from_z(torch.tensor([state])).detach().numpy()[0].transpose([1, 2, 0])
             cv2.imshow("reconstructed image", reconstructed_image)
+            cv2.namedWindow("reconstructed image", cv2.WINDOW_NORMAL)
+            cv2.resizeWindow("reconstructed image", 400, 140)
             #cv2.imshow("original image", image.transpose([1, 2, 0]))
-            cv2.imshow("original image", imagebig)
+            cv2.imshow("original image", np.flip(imagebig, axis=2))
+            cv2.namedWindow("original image", cv2.WINDOW_NORMAL)
+            cv2.resizeWindow("original image", 400, 120)
+            cv2.moveWindow("original image", 0, 180)
             k = cv2.waitKey(1) & 0xFF
             if k == 27:
                 pass
