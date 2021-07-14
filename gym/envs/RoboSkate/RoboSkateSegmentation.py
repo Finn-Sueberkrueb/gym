@@ -23,14 +23,9 @@ from torch import nn
 import cv2
 
 
-old_segmentation = False
 
-if old_segmentation:
-    camera_width = 200
-    camera_height = 60
-else:
-    camera_width = 1000
-    camera_height = 300
+camera_width = 1000
+camera_height = 300
 
 # Value Range for observations abs(-Min) = Max
 max_Joint_force = 250.0
@@ -376,13 +371,7 @@ class RoboSkateSegmentation(gym.Env):
         # Load CNN Model
         self.model = SegmentationNetwork()
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        if old_segmentation:
-            self.model.load_state_dict(
-                torch.load("../trained_models/Segmentation/model/model_z_dim_" + str(z_dim) + "_old.pth",
-                           map_location=torch.device(device)))
-        else:
-            self.model.load_state_dict(
-            torch.load("../trained_models/Segmentation/model/model_z_dim_" + str(z_dim) +".pth", map_location=torch.device(device)))
+        self.model.load_state_dict(torch.load("../trained_models/Segmentation/model/model_z_dim_" + str(z_dim) +".pth", map_location=torch.device(device)))
         self.model.eval()
 
         # Define action and observation space
@@ -476,10 +465,7 @@ class RoboSkateSegmentation(gym.Env):
         if not(self.headlessMode):
             # render image in Unity
             image = get_camera(self.stub, self.stepcount)
-            #print(image.shape)
-            #print("test")
             image = cv2.resize(image, (200, 60))
-            #print(image.shape)
             image = image.transpose([2, 0, 1])
             image = image / 255.0
 
@@ -542,7 +528,6 @@ class RoboSkateSegmentation(gym.Env):
             cv2.imshow("reconstructed image", reconstructed_image)
             cv2.namedWindow("reconstructed image", cv2.WINDOW_NORMAL)
             cv2.resizeWindow("reconstructed image", 400, 140)
-            #cv2.imshow("original image", image.transpose([1, 2, 0]))
             cv2.imshow("original image", np.flip(imagebig, axis=2))
             cv2.namedWindow("original image", cv2.WINDOW_NORMAL)
             cv2.resizeWindow("original image", 400, 120)
