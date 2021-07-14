@@ -382,7 +382,7 @@ class RoboSkateSegmentation(gym.Env):
                            map_location=torch.device(device)))
         else:
             self.model.load_state_dict(
-            torch.load("../trained_models/Segmentation/model/model_z_dim_" + str(z_dim) +"_old_new.pth", map_location=torch.device(device)))
+            torch.load("../trained_models/Segmentation/model/model_z_dim_" + str(z_dim) +".pth", map_location=torch.device(device)))
         self.model.eval()
 
         # Define action and observation space
